@@ -14,6 +14,10 @@
 #include <globals.h>
 #include <vector>
 
+#if defined(STICKY_MONOCHROME)
+void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool forceFullRedraw);
+#endif
+
 // The panel, its data bus and every pin come from the TFT_* / USE_* build flags
 // in boards/<board>/platformio.ini — DisplayDrivers builds the whole chain from
 // them. See the library's README for the flag vocabulary.
@@ -972,6 +976,10 @@ Opt_Coord drawOptions(
 ** Description:   Função para desenhar e mostrar o menu principal
 ***************************************************************************************/
 void drawMainMenu(std::vector<MenuOptions> &opt, int index, bool forceFullRedraw) {
+#if defined(STICKY_MONOCHROME)
+    drawStickyCardDeckMenu(opt, index, forceFullRedraw);
+    return;
+#endif
     // Remembers which item was drawn as selected last time, so a plain selection move only
     // has to erase the old highlight and paint the new one instead of repainting every icon.
     // The grid layout (position/size per item) never changes between calls in the same
