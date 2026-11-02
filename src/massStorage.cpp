@@ -10,6 +10,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 #if defined(SDM_SD)
 #include "diskio.h"
 #endif
@@ -433,8 +434,261 @@ void MassStorage::setup() {
     return loop();
 }
 
+
+namespace {
+constexpr uint8_t kMagic[4] = {'R', 'B', 'Y', '1'};
+constexpr size_t kHeaderSize = 9;
+constexpr uint32_t kMaxChunkSize = 65536;
+
+enum Opcode : uint8_t {
+    kOpPing = 0x01,
+    kOpList = 0x02,
+    kOpGet = 0x03,
+    kOpKey = 0x04,
+    kOpGetAck = 0x05,
+    kOpPut = 0x06,
+    kOpDelete = 0x07,
+
+    kOpPong = 0x81,
+    kOpListOk = 0x82,
+    kOpGetOk = 0x83,
+    kOpKeyOk = 0x84,
+    kOpPutOk = 0x86,
+    kOpDeleteOk = 0x87,
+    kOpErr = 0x8F,
+};
+
+bool readExact(uint8_t *buf, size_t len, uint32_t timeoutMs = 1500) {
+    const uint32_t start = millis();
+    size_t got = 0;
+    while (got < len && (millis() - start) < timeoutMs) {
+        if (Serial.available()) {
+            buf[got++] = Serial.read();
+        } else {
+            yield();
+        }
+    }
+    return got == len;
+}
+
+void writeAll(const uint8_t *data, size_t len) {
+    size_t written = 0;
+    while (written < len) {
+        const size_t n = Serial.write(data + written, len - written);
+        if (n == 0) {
+            yield();
+            continue;
+        }
+        written += n;
+    }
+    Serial.flush();
+}
+
+void sendHeader(uint8_t opcode, uint32_t payloadLen) {
+    uint8_t hdr[kHeaderSize];
+    memcpy(hdr, kMagic, 4);
+    hdr[4] = opcode;
+    hdr[5] = (uint8_t)(payloadLen & 0xFF);
+    hdr[6] = (uint8_t)((payloadLen >> 8) & 0xFF);
+    hdr[7] = (uint8_t)((payloadLen >> 16) & 0xFF);
+    hdr[8] = (uint8_t)((payloadLen >> 24) & 0xFF);
+    writeAll(hdr, sizeof(hdr));
+}
+
+void sendFrame(uint8_t opcode, const uint8_t *payload, uint32_t payloadLen) {
+    sendHeader(opcode, payloadLen);
+    if (payload && payloadLen > 0) {
+        writeAll(payload, payloadLen);
+    }
+}
+
+void sendError(const char *msg) {
+    sendFrame(kOpErr, (const uint8_t *)msg, strlen(msg));
+}
+
+bool waitForGetAck(uint32_t timeoutMs = 5000) {
+    uint8_t hdr[kHeaderSize];
+    if (!readExact(hdr, sizeof(hdr), timeoutMs)) return false;
+    return memcmp(hdr, kMagic, 4) == 0 && hdr[4] == kOpGetAck;
+}
+
+void handleList() {
+    File root = SDM.open("/");
+    if (!root || !root.isDirectory()) {
+        sendFrame(kOpListOk, nullptr, 0);
+        return;
+    }
+    std::vector<uint8_t> payload;
+    for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+        if (!f.isDirectory()) {
+            const char *rawName = f.name();
+            if (rawName[0] == '/') rawName++;
+            uint16_t nameLen = (uint16_t)strlen(rawName);
+            uint32_t size = (uint32_t)f.size();
+
+            payload.push_back((uint8_t)(nameLen & 0xFF));
+            payload.push_back((uint8_t)((nameLen >> 8) & 0xFF));
+            for (size_t i = 0; i < nameLen; i++) payload.push_back((uint8_t)rawName[i]);
+            payload.push_back((uint8_t)(size & 0xFF));
+            payload.push_back((uint8_t)((size >> 8) & 0xFF));
+            payload.push_back((uint8_t)((size >> 16) & 0xFF));
+            payload.push_back((uint8_t)((size >> 24) & 0xFF));
+        }
+        f.close();
+    }
+    root.close();
+    sendFrame(kOpListOk, payload.data(), payload.size());
+}
+
+void handleGet(uint32_t payloadLen) {
+    if (payloadLen <= 8) { sendError("short request"); return; }
+    uint8_t prefix[8];
+    if (!readExact(prefix, 8)) { sendError("short request prefix"); return; }
+    uint32_t offset = prefix[0] | (prefix[1] << 8) | (prefix[2] << 16) | (prefix[3] << 24);
+    uint32_t requestedLen = prefix[4] | (prefix[5] << 8) | (prefix[6] << 16) | (prefix[7] << 24);
+    uint32_t nameLen = payloadLen - 8;
+    char filename[128];
+    if (nameLen >= sizeof(filename)) nameLen = sizeof(filename) - 1;
+    if (!readExact((uint8_t *)filename, nameLen)) { sendError("short filename"); return; }
+    filename[nameLen] = '\0';
+
+    char path[140];
+    if (filename[0] == '/') snprintf(path, sizeof(path), "%s", filename);
+    else snprintf(path, sizeof(path), "/%s", filename);
+
+    File f = SDM.open(path, FILE_READ);
+    if (!f) { sendError("file not found"); return; }
+    uint32_t fileSize = f.size();
+    if (offset >= fileSize) {
+        f.close();
+        sendFrame(kOpGetOk, nullptr, 0); // EOF
+        return;
+    }
+    if (!f.seek(offset)) { f.close(); sendError("seek failed"); return; }
+
+    uint32_t chunkLen = requestedLen;
+    if (chunkLen > kMaxChunkSize) chunkLen = kMaxChunkSize;
+    if (offset + chunkLen > fileSize) chunkLen = fileSize - offset;
+
+    sendHeader(kOpGetOk, chunkLen);
+    uint8_t buf[1024];
+    uint32_t rem = chunkLen;
+    while (rem > 0) {
+        size_t toRead = rem < sizeof(buf) ? rem : sizeof(buf);
+        size_t n = f.read(buf, toRead);
+        if (n == 0) break;
+        writeAll(buf, n);
+        rem -= n;
+    }
+    f.close();
+    waitForGetAck();
+}
+
+void handlePut(uint32_t payloadLen) {
+    if (payloadLen <= 12) { sendError("short put request"); return; }
+    uint8_t hdr[12];
+    if (!readExact(hdr, 12)) { sendError("short put header"); return; }
+    uint32_t offset = hdr[0] | (hdr[1] << 8) | (hdr[2] << 16) | (hdr[3] << 24);
+    uint32_t totalSize = hdr[4] | (hdr[5] << 8) | (hdr[6] << 16) | (hdr[7] << 24);
+    (void)totalSize;
+    uint16_t chunkLen = hdr[8] | (hdr[9] << 8);
+    uint16_t nameLen = hdr[10] | (hdr[11] << 8);
+
+    char filename[128];
+    if (nameLen >= sizeof(filename)) nameLen = sizeof(filename) - 1;
+    if (!readExact((uint8_t *)filename, nameLen)) { sendError("short filename in put"); return; }
+    filename[nameLen] = '\0';
+
+    char path[140];
+    if (filename[0] == '/') snprintf(path, sizeof(path), "%s", filename);
+    else snprintf(path, sizeof(path), "/%s", filename);
+
+    File f = SDM.open(path, offset == 0 ? FILE_WRITE : FILE_APPEND);
+    if (!f) { sendError("failed to open for writing"); return; }
+
+    uint8_t buf[1024];
+    uint32_t rem = chunkLen;
+    while (rem > 0) {
+        size_t toRead = rem < sizeof(buf) ? rem : sizeof(buf);
+        if (!readExact(buf, toRead)) { f.close(); sendError("short chunk read"); return; }
+        f.write(buf, toRead);
+        rem -= toRead;
+    }
+    f.close();
+
+    uint8_t resp[4];
+    resp[0] = (uint8_t)(offset & 0xFF);
+    resp[1] = (uint8_t)((offset >> 8) & 0xFF);
+    resp[2] = (uint8_t)((offset >> 16) & 0xFF);
+    resp[3] = (uint8_t)((offset >> 24) & 0xFF);
+    sendFrame(kOpPutOk, resp, sizeof(resp));
+}
+
+void handleDelete(uint32_t payloadLen) {
+    char filename[128];
+    if (payloadLen >= sizeof(filename)) payloadLen = sizeof(filename) - 1;
+    if (!readExact((uint8_t *)filename, payloadLen)) { sendError("short filename"); return; }
+    filename[payloadLen] = '\0';
+
+    char path[140];
+    if (filename[0] == '/') snprintf(path, sizeof(path), "%s", filename);
+    else snprintf(path, sizeof(path), "/%s", filename);
+
+    if (SDM.exists(path)) {
+        if (SDM.remove(path)) {
+            sendFrame(kOpDeleteOk, nullptr, 0);
+        } else {
+            sendError("failed to remove file");
+        }
+    } else {
+        sendError("file not found");
+    }
+}
+
+void serviceSerialTransfer() {
+    if (Serial.available() < (int)kHeaderSize) return;
+
+    if (Serial.peek() != kMagic[0]) {
+        Serial.read();
+        return;
+    }
+
+    uint8_t hdr[kHeaderSize];
+    if (!readExact(hdr, kHeaderSize, 100)) return;
+    if (memcmp(hdr, kMagic, 4) != 0) return;
+
+    uint8_t opcode = hdr[4];
+    uint32_t length = hdr[5] | (hdr[6] << 8) | (hdr[7] << 16) | (hdr[8] << 24);
+
+    switch (opcode) {
+        case kOpPing:
+            drawUSBStickIcon(true);
+            sendFrame(kOpPong, nullptr, 0);
+            break;
+        case kOpList:
+            handleList();
+            break;
+        case kOpGet:
+            handleGet(length);
+            break;
+        case kOpPut:
+            handlePut(length);
+            break;
+        case kOpDelete:
+            handleDelete(length);
+            break;
+        default:
+            sendError("unknown opcode");
+            break;
+    }
+}
+} // namespace
+
 void MassStorage::loop() {
+    MassStorage::displayMessage("Connect USB & run:\nbin/sticky-transfer");
+    drawUSBStickIcon(false);
     while (!check(EscPress) && !check(SelPress) && !touchPoint.pressed && !shouldStop) {
+        serviceSerialTransfer();
         yield();
     }
     if (touchPoint.pressed) touchPoint.Clear();
