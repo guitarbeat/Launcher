@@ -458,7 +458,7 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
     if (fullRedraw) {
         tft->fillScreen(WHITE);
         drawHeader();
-        drawRightButtonRail("RUN", "UP", "DOWN", "BACK");
+        drawRightButtonRail("RUN", "UP", "DOWN", nullptr);
 
         // Scroll indicators centered in card content area (x = 224)
         if (startIdx > 0) {
