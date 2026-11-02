@@ -434,7 +434,10 @@ void MassStorage::setup() {
 }
 
 void MassStorage::loop() {
-    while (!check(EscPress) && !shouldStop) yield();
+    while (!check(EscPress) && !check(SelPress) && !touchPoint.pressed && !shouldStop) {
+        yield();
+    }
+    if (touchPoint.pressed) touchPoint.Clear();
 }
 
 void MassStorage::beginUsb() {

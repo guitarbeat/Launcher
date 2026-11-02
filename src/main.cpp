@@ -509,7 +509,7 @@ void loop() {
              } else {
                  displayError("Insert SD Card");
              }
-         }, sdcardMounted},
+         }, true},
 #endif
         {tiny ? "PM" : "PMan", "Partition Manager.", [=]() { partList(); }},
         {"CFG", tiny ? "Change Settings." : "Change Launcher Settings.", [=]() { settings_menu(); }}
