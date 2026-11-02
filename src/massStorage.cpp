@@ -410,14 +410,19 @@ MassStorage::~MassStorage() {
 #if defined(MSC_SD_RAISE_CLOCK)
     restoreSdClock();
 #endif
+    // Wait 50ms for SD power rail and bus settling
+    vTaskDelay(pdMS_TO_TICKS(50));
+    sdcardMounted = false;
+    if (!setupSdCard()) {
+        displayError("SD remount failed.\nPlease run disk check on PC.", false);
+        vTaskDelay(pdMS_TO_TICKS(2500));
+    }
 #if MSC_DEBUG_LOG
     if (sdcardMounted) flushMscLog();
 #endif
 }
 
 void MassStorage::setup() {
-    displayMessage("Mounting...");
-
     setShouldStop(false);
 
     if (!setupSdCard()) {
@@ -425,12 +430,23 @@ void MassStorage::setup() {
         return;
     }
 
+    // 1. Render the USB transfer screen to e-paper / display first so the SPI bus is quiescent
+    MassStorage::displayMessage("Connect USB & run:\nbin/sticky-transfer");
+    drawUSBStickIcon(false);
+    tft->display(false);
+
 #if defined(MSC_SD_RAISE_CLOCK)
     raiseSdClockForMsc();
 #endif
+
+    // 2. Call SD.end() to release filesystem locks and sector caches for safe exclusive volume handover
+    SDM.end();
+    sdcardMounted = false;
+
+    // 3. Start USB MSC subsystem
     beginUsb();
 
-    vTaskDelay(pdTICKS_TO_MS(100));
+    vTaskDelay(pdMS_TO_TICKS(50));
     return loop();
 }
 
@@ -666,15 +682,19 @@ void serviceSerialTransfer() {
             sendFrame(kOpPong, nullptr, 0);
             break;
         case kOpList:
+            if (!sdcardMounted) setupSdCard();
             handleList();
             break;
         case kOpGet:
+            if (!sdcardMounted) setupSdCard();
             handleGet(length);
             break;
         case kOpPut:
+            if (!sdcardMounted) setupSdCard();
             handlePut(length);
             break;
         case kOpDelete:
+            if (!sdcardMounted) setupSdCard();
             handleDelete(length);
             break;
         default:
@@ -685,8 +705,6 @@ void serviceSerialTransfer() {
 } // namespace
 
 void MassStorage::loop() {
-    MassStorage::displayMessage("Connect USB & run:\nbin/sticky-transfer");
-    drawUSBStickIcon(false);
     while (!check(EscPress) && !check(SelPress) && !touchPoint.pressed && !shouldStop) {
         serviceSerialTransfer();
         yield();
@@ -728,6 +746,10 @@ void MassStorage::displayMessage(String message) {
 }
 
 int32_t usbWriteCallback(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t bufsize) {
+    if (sdcardMounted) {
+        SDM.end();
+        sdcardMounted = false;
+    }
     const uint32_t secSize = SDM.sectorSize();
     if (secSize == 0 || secSize > 512) {
         MSC_LOG(
