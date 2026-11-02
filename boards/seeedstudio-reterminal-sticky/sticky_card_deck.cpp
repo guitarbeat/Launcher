@@ -5,6 +5,8 @@
 #include "display.h"
 #include "interface.h"
 #include "font5x7_rot.h"
+#include <cmath>
+#include <algorithm>
 #include <Arduino.h>
 
 enum StickyIconType {
@@ -261,22 +263,55 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
     for (int i = 0; i < 3; ++i) {
         if (!labels[i] || !labels[i][0]) continue;
         int textH = getTextWidthRotated(labels[i], 2);
-        int notchH = textH + 18;
-        if (notchH < 68) notchH = 68;
-        if (notchH > 112) notchH = 112;
-        int notchY = centers[i] - notchH / 2;
-        if (i == 2 && notchH > 74) {
-            notchY = 256;
+
+        // Organic curved tab with smooth tangent fillets to bezel edge
+        constexpr int rTrans = 14;
+        int faceH = textH + 6;
+        if (faceH < 24) faceH = 24;
+        int centerY = centers[i];
+        int yTop = centerY - faceH / 2;
+        int yBot = centerY + faceH / 2;
+        if (i == 2 && yBot > 310) {
+            yBot = 310;
+            yTop = yBot - faceH;
+            centerY = (yTop + yBot) / 2;
         }
 
-        // Dynamic Notch: solid black bezel tab protruding inwards from right edge (X = 480).
-        // Rounded inner corners (radius 6px) facing content; flush flat edge against bezel.
-        tft->fillRoundRect(notchX, notchY, kNotchW, notchH, 6, BLACK);
-        tft->fillRect(notchX + 6, notchY, kNotchW - 6, notchH, BLACK);
+        const int yStart = yTop - 2 * rTrans;
+        const int yEnd = yBot + 2 * rTrans;
+        constexpr int bezelX = 480;
+        constexpr float halfW = kNotchW / 2.0f;
+        constexpr float invR = 1.0f / rTrans;
+
+        for (int y = yStart; y <= yEnd; ++y) {
+            int xEdge = notchX;
+            if (y < yTop - rTrans) {
+                float t = (float)(y - yStart) * invR;
+                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
+                xEdge = bezelX - (int)(dx + 0.5f);
+            } else if (y <= yTop) {
+                float t = (float)(yTop - y) * invR;
+                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
+                xEdge = notchX + (int)(dx + 0.5f);
+            } else if (y <= yBot) {
+                xEdge = notchX;
+            } else if (y < yBot + rTrans) {
+                float t = (float)(y - yBot) * invR;
+                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
+                xEdge = notchX + (int)(dx + 0.5f);
+            } else {
+                float t = (float)(yEnd - y) * invR;
+                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
+                xEdge = bezelX - (int)(dx + 0.5f);
+            }
+            if (xEdge < bezelX) {
+                tft->drawFastHLine(xEdge, y, bezelX - xEdge, BLACK);
+            }
+        }
 
         // High-contrast inverse white bold text centered inside the notch
         int charX = notchX + (kNotchW - 14) / 2; // 14px glyph height in X
-        int startY = (notchY + notchH / 2) + textH / 2;
+        int startY = centerY + textH / 2;
         drawTextRotated90CW(charX, startY, labels[i], 2, WHITE);
     }
 
