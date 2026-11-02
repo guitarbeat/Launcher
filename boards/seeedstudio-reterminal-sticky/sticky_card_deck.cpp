@@ -202,10 +202,11 @@ static void drawStickyIcon(StickyIconType type, int x, int y, uint16_t color) {
 static void drawHeader() {
     tft->setTextSize(_fm); // Size 3 (24px)
     tft->setTextColor(BLACK, WHITE);
-    tft->drawString("STICKY MULTI-BOOT", 16, 14);
+    tft->drawString("STICKY MULTI-BOOT", 16, 12);
 
     tft->setTextSize(1);
-    tft->drawString("reTerminal Sticky - Multi-Firmware Deck", 16, 38);
+    tft->setTextColor(BLACK, WHITE);
+    tft->drawString("NAV: 3 BUTTONS ON RIGHT [^ UP] [v DOWN] [* SELECT]", 16, 38);
 
     int bat = getBattery();
     if (bat < 0) bat = 0;
@@ -230,9 +231,9 @@ static void drawHeader() {
 static void drawSingleCard(int slotIdx, int itemIdx, const MenuOptions &item, bool isSelected) {
     CardInfo info = getCardInfo(item);
     int x = 16;
-    int y = 62 + slotIdx * (96 + 10);
+    int y = 60 + slotIdx * (92 + 8);
     int w = tftWidth - 32;
-    int h = 96;
+    int h = 92;
 
     if (isSelected) {
         tft->fillRoundRect(x, y, w, h, 6, BLACK);
@@ -249,16 +250,20 @@ static void drawSingleCard(int slotIdx, int itemIdx, const MenuOptions &item, bo
         tft->setTextColor(WHITE, BLACK);
         tft->drawString(info.subtitle, x + 56, y + 46);
 
+        // Prominent action badge on right of selected card
+        int btnW = 124;
+        int btnH = 32;
+        int btnX = x + w - btnW - 14;
+        int btnY = y + (h - btnH) / 2;
+        tft->fillRoundRect(btnX, btnY, btnW, btnH, 4, WHITE);
+        tft->drawRoundRect(btnX, btnY, btnW, btnH, 4, BLACK);
+        tft->setTextSize(2);
+        tft->setTextColor(BLACK, WHITE);
+        tft->drawCentreString("[*] SELECT", btnX + btnW / 2, btnY + 8, 1);
+
         tft->setTextSize(1);
         tft->setTextColor(WHITE, BLACK);
-        tft->drawRightString(info.badge, x + w - 34, y + 16, 1);
-
-        int chvX = x + w - 20;
-        int chvY = y + h / 2;
-        for (int t = 0; t < 3; ++t) {
-            tft->drawLine(chvX + t - 6, chvY - 7, chvX + t, chvY, WHITE);
-            tft->drawLine(chvX + t, chvY, chvX + t - 6, chvY + 7, WHITE);
-        }
+        tft->drawRightString(info.badge, btnX - 10, y + 16, 1);
     } else {
         tft->fillRoundRect(x, y, w, h, 6, WHITE);
         tft->drawRoundRect(x, y, w, h, 6, BLACK);
@@ -332,12 +337,37 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
         for (int slot = 0; slot < visibleCount; ++slot) {
             int itemIdx = startIdx + slot;
             int x = 16;
-            int y = 62 + slot * (96 + 10);
+            int y = 60 + slot * (92 + 8);
             int w = tftWidth - 32;
-            int h = 96;
+            int h = 92;
             opt[itemIdx].setCoords(x, y, w, h);
             drawSingleCard(slot, itemIdx, opt[itemIdx], (itemIdx == index));
         }
+
+        // Dedicated Hardware Navigation Guide Card (anchored above footer)
+        int legendY = 662;
+        int legendH = 104;
+        tft->fillRoundRect(16, legendY, tftWidth - 32, legendH, 6, WHITE);
+        tft->drawRoundRect(16, legendY, tftWidth - 32, legendH, 6, BLACK);
+        tft->drawRoundRect(17, legendY + 1, tftWidth - 34, legendH - 2, 5, BLACK);
+
+        // Header strip inside box
+        tft->fillRect(18, legendY + 2, tftWidth - 36, 24, BLACK);
+        tft->setTextSize(1);
+        tft->setTextColor(WHITE, BLACK);
+        tft->drawCentreString("CONTROLS: 3 HARDWARE BUTTONS ON RIGHT EDGE", tftWidth / 2, legendY + 8, 1);
+
+        // Button mappings (large, crisp, unmistakable)
+        tft->setTextSize(2);
+        tft->setTextColor(BLACK, WHITE);
+        tft->drawString("[^] TOP BTN  : UP", 28, legendY + 34);
+        tft->drawString("[v] MID BTN  : DOWN", 28, legendY + 56);
+        tft->drawString("[*] BOT BTN  : SELECT / RUN", 28, legendY + 78);
+
+        // Tips on right side of box
+        tft->setTextSize(1);
+        tft->drawRightString("HOLD [^+v] TOGETHER: BACK / ESC", tftWidth - 28, legendY + 40, 1);
+        tft->drawRightString("TOUCH: TAP CARDS DIRECTLY", tftWidth - 28, legendY + 66, 1);
 
         // Bottom divider before touch footer
         tft->drawLine(16, tftHeight - 2, tftWidth - 16, tftHeight - 2, BLACK);
@@ -347,9 +377,9 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
         for (int slot = 0; slot < visibleCount; ++slot) {
             int itemIdx = startIdx + slot;
             int x = 16;
-            int y = 62 + slot * (96 + 10);
+            int y = 60 + slot * (92 + 8);
             int w = tftWidth - 32;
-            int h = 96;
+            int h = 92;
             opt[itemIdx].setCoords(x, y, w, h);
 
             if (itemIdx == prevIndex || itemIdx == index) {
