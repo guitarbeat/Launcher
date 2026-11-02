@@ -162,6 +162,8 @@ int currentIndex;
 int rotation = ROTATION + ROT_OFFSET;
 bool sdcardMounted;
 bool onlyBins;
+bool soundEnabled = false;
+static int s_navCount = 0;
 #if defined(STICKY_MONOCHROME)
 bool bootToApp = false;
 #else
@@ -594,13 +596,16 @@ void loop() {
         }
 
 #ifdef E_PAPER_DISPLAY
-        // Back has no action on the main menu. Consume it so an unread Escape
-        // cannot keep the input task from accepting navigation or Select.
+        // Back / Chord triggers an instant anti-ghosting clean screen refresh!
         if (check(EscPress)) {
 #if defined(STICKY_MONOCHROME)
-            setStickyActiveButton(3);
+            setStickyActiveButton(3, 2);
             stickyAudioFeedback(1600, 30);
-            refreshStickyButtonRail();
+            tft->fillScreen(WHITE);
+            drawStickyCardDeckMenu(menuItems, index, true);
+            tft->display(true);
+            resetStickyActiveButton();
+            s_navCount = 0;
 #endif
         }
 #endif
@@ -628,9 +633,15 @@ void loop() {
                 i++;
             }
 #if defined(STICKY_MONOCHROME)
-            if (touchPoint.x >= 420) {
+            if (touchPoint.y < 52 && touchPoint.x < 420) {
+                // Tapping header triggers instant full anti-ghosting refresh!
+                tft->fillScreen(WHITE);
+                drawStickyCardDeckMenu(menuItems, index, true);
+                tft->display(true);
+                s_navCount = 0;
+            } else if (touchPoint.x >= 420) {
                 if (touchPoint.y < 140) {
-                    setStickyActiveButton(0);
+                    setStickyActiveButton(0, 2);
                     stickyAudioFeedback(3000, 25);
                     refreshStickyButtonRail();
                     menuItems.at(index).action();
@@ -645,13 +656,15 @@ void loop() {
                     else if (index > 0) index--;
                     pass_by = 0;
                     redraw = true;
-                    setStickyActiveButton(1);
+                    s_navCount++;
+                    setStickyActiveButton(1, 2);
                     stickyAudioFeedback(2400, 15);
                 } else if (touchPoint.y >= 250 && touchPoint.y < 340) {
                     index++;
                     if ((index + 1) > opt) index = 0;
                     redraw = true;
-                    setStickyActiveButton(2);
+                    s_navCount++;
+                    setStickyActiveButton(2, 2);
                     stickyAudioFeedback(2000, 15);
                 }
             }
@@ -664,7 +677,7 @@ void loop() {
             pass_by = 0;
             redraw = true;
 #if defined(STICKY_MONOCHROME)
-            setStickyActiveButton(1);
+            s_navCount++; setStickyActiveButton(1, 2);
             stickyAudioFeedback(2400, 15);
 #endif
         }
@@ -677,7 +690,7 @@ void loop() {
             }
             redraw = true;
 #if defined(STICKY_MONOCHROME)
-            setStickyActiveButton(2);
+            s_navCount++; setStickyActiveButton(2, 2);
             stickyAudioFeedback(2000, 15);
 #endif
         }
@@ -764,10 +777,23 @@ void loop() {
         }
 #endif
 #if defined(STICKY_MONOCHROME)
-        if (getStickyActiveButton() != -1 && (launcherMillis() - getStickyActiveButtonTime() > 400)) {
+        if (getStickyActiveButton() != -1) {
+            unsigned long elapsed = launcherMillis() - getStickyActiveButtonTime();
             if (launcherGpioRead(4) != LOW && launcherGpioRead(5) != LOW && launcherGpioRead(6) != LOW) {
-                resetStickyActiveButton();
-                refreshStickyButtonRail();
+                if (getStickyNotchPhase() == 2 && elapsed > 200) {
+                    setStickyActiveButton(getStickyActiveButton(), 3); // Phase 3: Rebound
+                    refreshStickyButtonRail();
+                } else if (getStickyNotchPhase() == 3 && elapsed > 400) {
+                    resetStickyActiveButton(); // Phase 0: Resting
+                    if (s_navCount >= 8) {
+                        s_navCount = 0;
+                        tft->fillScreen(WHITE);
+                        drawStickyCardDeckMenu(menuItems, index, true);
+                        tft->display(true);
+                    } else {
+                        refreshStickyButtonRail();
+                    }
+                }
             }
         }
 #endif

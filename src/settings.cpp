@@ -151,6 +151,9 @@ int applySettingsFromRoot(JsonObject setting) {
         log_i("applySettingsFromRoot: missing onlyBins");
     }
 
+    if (setting["soundEnabled"].is<bool>()) soundEnabled = setting["soundEnabled"].as<bool>();
+    else soundEnabled = false;
+
     if (setting["bootToApp"].is<bool>()) bootToApp = setting["bootToApp"].as<bool>();
     else {
         count++;
@@ -309,6 +312,7 @@ void populateSettingsFromGlobals(JsonObject setting) {
     if (!setting["wifi"].is<JsonArray>()) setting.createNestedArray("wifi");
 
     setting["onlyBins"] = onlyBins;
+    setting["soundEnabled"] = soundEnabled;
     setting["bootToApp"] = bootToApp;
     setting["bootTimer"] = bootTimer;
     setting["DDLB"] = DDLB;
@@ -646,6 +650,14 @@ void settings_menu() {
                  saveConfigs();
              }}
         );
+        options.push_back({soundEnabled ? "[x] Click Sound" : "[ ] Click Sound", [=]() {
+                               soundEnabled = !soundEnabled;
+                               saveConfigs();
+                           }});
+        options.push_back({"[>] Refresh Screen", [=]() {
+                               tft->fillScreen(WHITE);
+                               tft->display(true);
+                           }});
         options.push_back({bootToApp ? "[ ] Boot to Launcher" : "[x] Boot to Launcher", [=]() {
                                bootToApp = !bootToApp;
                                saveConfigs();
@@ -1084,6 +1096,7 @@ bool saveIntoNVS() {
     ok &= lnvs::setInt(h, "dimtime", dimmerSet);
     ok &= lnvs::setInt(h, "bright", bright);
     ok &= lnvs::setBool(h, "onlyBins", onlyBins);
+    ok &= lnvs::setBool(h, "soundEnabled", soundEnabled);
     ok &= lnvs::setBool(h, "bootToApp", bootToApp);
     ok &= nvs_set_u8(h, "bootTimer", bootTimer) == ESP_OK;
     ok &= lnvs::setBool(h, "DDLB", DDLB);
@@ -1171,6 +1184,7 @@ void defaultValues() {
 #endif
     bright = 100;
     onlyBins = true;
+    soundEnabled = false;
     bootToApp = true;
     bootTimer = 4;
     DDLB = false;
@@ -1218,6 +1232,7 @@ bool getFromNVS() {
     lnvs::getInt(h, "dimtime", dimmerSet);
     lnvs::getInt(h, "bright", bright);
     lnvs::getBool(h, "onlyBins", onlyBins);
+    lnvs::getBool(h, "soundEnabled", soundEnabled);
     lnvs::getBool(h, "bootToApp", bootToApp);
     nvs_get_u8(h, "bootTimer", &bootTimer);
     lnvs::getBool(h, "DDLB", DDLB);

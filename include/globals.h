@@ -224,6 +224,7 @@ extern bool askSpiffs;
 
 // Used to control boot process
 extern bool bootToApp;
+extern bool soundEnabled;
 
 // Boot time control
 extern uint8_t bootTimer;
