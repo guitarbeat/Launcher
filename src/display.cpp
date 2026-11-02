@@ -206,20 +206,11 @@ void setTftDisplay(int x, int y, uint16_t fc, int size, uint16_t bg) {
 ** Description:   Draw touch screen footer
 ***************************************************************************************/
 void TouchFooter(uint16_t color) {
-#if defined(STICKY_MONOCHROME)
-    int footerY = tftHeight + 2;
-    int footerH = (_fm * LH + 4);
-    // Keep touch footer inside 0..426 so the 54px right button rail is never overwritten
-    tft->fillRect(0, footerY, 426, footerH, WHITE);
-    tft->drawRect(4, footerY, 426 - 8, footerH - 1, BLACK);
-
-    // Touch navigation zones matching the 3 touch thirds (Prev, Sel, Next)
-    tft->setTextSize(2);
-    tft->setTextColor(BLACK, WHITE);
-    tft->drawString("<<< PREV", 14, footerY + 5);
-    tft->drawCentreString("SELECT", 213, footerY + 5, 1);
-    tft->drawRightString("NEXT >>>", 426 - 14, footerY + 5, 1);
-#elif defined(HAS_TOUCH) && !defined(HAS_TOUCH_NO_BORDER)
+#if defined(STICKY_MONOCHROME) || defined(HAS_TOUCH_NO_BORDER)
+    // No bottom footer guides: dedicated right-edge physical button rail handles all navigation
+    (void)color;
+    return;
+#elif defined(HAS_TOUCH)
     tft->drawRoundRect(5 + RES, tftHeight + 2, tftWidth - 10 - 2 * RES, (_fm * LH + 4), 5, color);
     tft->setTextColor(color);
     tft->setTextSize(_fm);
@@ -234,9 +225,10 @@ void TouchFooter(uint16_t color) {
 ** Description:   Draw touch screen footer
 ***************************************************************************************/
 void TouchFooter2(uint16_t color) {
-#if defined(STICKY_MONOCHROME)
-    TouchFooter(color);
-#elif defined(HAS_TOUCH) && !defined(HAS_TOUCH_NO_BORDER)
+#if defined(STICKY_MONOCHROME) || defined(HAS_TOUCH_NO_BORDER)
+    (void)color;
+    return;
+#elif defined(HAS_TOUCH)
     tft->drawRoundRect(5 + RES, tftHeight + 2, tftWidth - 10 - 2 * RES, (_fm * LH + 4), 5, color);
     tft->setTextColor(color);
     tft->setTextSize(_fm);

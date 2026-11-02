@@ -190,23 +190,52 @@ void hal_buttons_poll_1(const DeviceButtons &cfg) {
 }
 
 void hal_buttons_poll_3(const DeviceButtons &cfg) {
-    static unsigned long tm = 0;
-    if (launcherMillis() - tm < 200 && !LongPress) return;
+    static bool lastPrev = false;
+    static bool lastNext = false;
+    static bool lastSel = false;
+    static unsigned long lastEdgeTime = 0;
+    constexpr unsigned long kDebounceMs = 60;
 
     bool prev = pressed(cfg.btn1, cfg.activeHigh);
     bool next = pressed(cfg.btn2, cfg.activeHigh);
     bool sel = pressed(cfg.btn3, cfg.activeHigh);
 
-    bool anyPressed = prev || next || sel;
-    if (anyPressed) tm = launcherMillis();
-    if (anyPressed && wakeUpScreen()) return;
+    if (wakeUpScreen()) return;
 
-    AnyKeyPress = anyPressed;
-    EscPress = prev && next;
-    if (EscPress) return;
-    PrevPress = prev;
-    NextPress = next;
-    SelPress = sel;
+    // Two-button chord: Prev + Next together = ESC / BACK
+    if (prev && next) {
+        if (!lastPrev || !lastNext) {
+            EscPress = true;
+            AnyKeyPress = true;
+        }
+        lastPrev = prev;
+        lastNext = next;
+        lastSel = sel;
+        return;
+    }
+
+    const unsigned long now = launcherMillis();
+
+    // Edge triggers: fire reliably on leading edge (button press down)
+    if (prev && !lastPrev && (now - lastEdgeTime > kDebounceMs)) {
+        PrevPress = true;
+        AnyKeyPress = true;
+        lastEdgeTime = now;
+    }
+    if (next && !lastNext && (now - lastEdgeTime > kDebounceMs)) {
+        NextPress = true;
+        AnyKeyPress = true;
+        lastEdgeTime = now;
+    }
+    if (sel && !lastSel && (now - lastEdgeTime > kDebounceMs)) {
+        SelPress = true;
+        AnyKeyPress = true;
+        lastEdgeTime = now;
+    }
+
+    lastPrev = prev;
+    lastNext = next;
+    lastSel = sel;
 }
 
 void hal_buttons_poll_5(const DeviceButtons &cfg) {

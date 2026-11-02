@@ -8,6 +8,10 @@ void turnOffDisplay() { setBrightness(0, false); }
 /* If the device screen is off, turn on, else just refresh sleep timer */
 bool wakeUpScreen() {
     previousMillis = launcherMillis();
+#if defined(STICKY_MONOCHROME) || defined(E_PAPER_DISPLAY)
+    // E-paper displays have no backlight and never dim; never swallow button presses for wake
+    return false;
+#else
     if (isScreenOff) {
         isScreenOff = false;
         dimmer = false;
@@ -19,10 +23,15 @@ bool wakeUpScreen() {
         return true;
     }
     return false;
+#endif
 }
 
 /* Check if it's time to put the device to sleep */
 void checkPowerSaveTime() {
+#if defined(STICKY_MONOCHROME) || defined(E_PAPER_DISPLAY)
+    // E-paper displays cannot dim; do not trigger false dimmer or screen-off state
+    return;
+#else
     if (dimmerSet != 0) {
         if ((launcherMillis() - previousMillis) >= (dimmerSet * 1000) && dimmer == false &&
             isSleeping == false) {
@@ -36,6 +45,7 @@ void checkPowerSaveTime() {
             turnOffDisplay();
         }
     }
+#endif
 }
 
 /* Put device on sleep mode */

@@ -561,8 +561,10 @@ void loop() {
             tft->display(false);
             if (first_loop) {
                 first_loop = false;
+#if !defined(STICKY_MONOCHROME)
                 launcherDelayMs(350);
                 resetGlobals(); // avoid leaking command after menu is shown
+#endif
             }
         }
 #ifndef E_PAPER_DISPLAY

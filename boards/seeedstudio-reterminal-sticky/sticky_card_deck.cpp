@@ -446,7 +446,7 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
             drawSingleCard(slot, itemIdx, opt[itemIdx], (itemIdx == index));
         }
 
-        TouchFooter();
+
     } else {
         // Incremental fast-update of previous and newly selected cards
         for (int slot = 0; slot < visibleCount; ++slot) {
@@ -463,7 +463,6 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
         }
     }
 
-    tft->display(false);
 }
 
 #endif // STICKY_MONOCHROME
