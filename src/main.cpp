@@ -487,8 +487,12 @@ void loop() {
 #if !defined(DISABLE_SDCARD_ICON)
         {"SD",
                                          tiny ? "Launch from SDCard" : "Launch from or mng SDCard",
-                                         [=]() { loopSD(false); },
-                                         sdcardMounted},
+                                         [=]() {
+             if (!sdcardMounted) setupSdCard();
+             if (sdcardMounted) loopSD(false);
+             else displayError("Insert SD Card");
+         },
+                                         true},
 #endif
 #ifndef DISABLE_OTA
         {"OTA", "Online Installer", [=]() { ota_function(); }},
@@ -542,7 +546,7 @@ void loop() {
     while (1) {
         if (redraw) {
             if (update_sd != sdcardMounted) {
-                for (auto o : menuItems) {
+                for (auto &o : menuItems) {
                     if (o.name == "SD") o.active = sdcardMounted;
                     if (o.name == "USB") o.active = sdcardMounted;
                 }

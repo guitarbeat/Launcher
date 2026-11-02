@@ -61,12 +61,29 @@ bool setupSdCard() {
     vTaskDelay(pdTICKS_TO_MS(10));
     if (!SDM.begin(_cs, sdcardSPI))
 #else
+    if (sdcardMounted) return true;
     const bool sdOnTftBus = (_mosi == displayConfig.mosi && displayConfig.mosi >= 0);
     if (!sdOnTftBus) {
         sdcardSPI.begin(_sck, _miso, _mosi, _cs);
         vTaskDelay(pdTICKS_TO_MS(10));
     }
-    if (sdOnTftBus ? !SDM.begin(_cs) : !SDM.begin(_cs, sdcardSPI))
+    // Ensure display CS is high so the shared SPI bus is strictly dedicated to SD
+    if (displayConfig.cs >= 0) {
+        pinMode(displayConfig.cs, OUTPUT);
+        digitalWrite(displayConfig.cs, HIGH);
+    }
+    pinMode(_cs, OUTPUT);
+    digitalWrite(_cs, HIGH);
+
+    bool mounted = false;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (sdOnTftBus ? SDM.begin(_cs) : SDM.begin(_cs, sdcardSPI)) {
+            mounted = true;
+            break;
+        }
+        vTaskDelay(pdTICKS_TO_MS(40));
+    }
+    if (!mounted)
 #endif
     {
         // sdcardSPI.end(); // Closes SPI connections and release pin header.

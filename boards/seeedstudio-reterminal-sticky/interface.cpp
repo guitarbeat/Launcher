@@ -199,19 +199,17 @@ void _setup_gpio() {
     launcherGpioOutput(TOUCH_INT);
     launcherGpioWrite(TOUCH_INT, LOW);
 
-    launcherGpioWrite(TOUCH_EN, LOW);
-    launcherGpioWrite(SD_PWR_EN, LOW);
-    launcherGpioWrite(EPD_EN, LOW);
-    launcherGpioWrite(BAT_CHG_EN, HIGH);
-    launcherDelayMs(100); // Wait for 3.3V rails to settle before touching the bus
-
+    // Keep rails stably enabled — do not cycle SD_PWR_EN low while signal
+    // pins are connected, as that phantom-powers the SD card through its ESD
+    // protection diodes and locks it in a brownout state on boot.
     launcherGpioWrite(TOUCH_EN, HIGH);
     launcherGpioWrite(SD_PWR_EN, HIGH);
     launcherGpioWrite(EPD_EN, HIGH);
     launcherGpioWrite(BAT_CHG_EN, LOW); // Active low; left undriven the charger stays disabled.
-    // Drive CS Pins High
+    // Drive CS Pins High immediately so peripherals are deselected
     launcherGpioWrite(TFT_CS, HIGH);
     launcherGpioWrite(SDCARD_CS, HIGH);
+    launcherDelayMs(50);
 
     // Setup Inputs
     hal_buttons_init(buttonsCfg(), 3);
@@ -312,8 +310,8 @@ void InputHandler(void) {
 ***************************************************************************************/
 void reboot() {
     launcherGpioWrite(SDCARD_CS, HIGH);
-    launcherGpioWrite(SD_PWR_EN, LOW);
-    launcherDelayMs(200);
+    launcherGpioWrite(SD_PWR_EN, HIGH);
+    launcherDelayMs(50);
     ESP.restart();
 }
 
