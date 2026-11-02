@@ -1,5 +1,9 @@
 #include <globals.h>
 
+#if defined(STICKY_MONOCHROME)
+#include "../boards/seeedstudio-reterminal-sticky/sticky_card_deck.h"
+#endif
+
 #include "display.h"
 #include "esp_ota_ops.h"
 #include "idf/idf_wifi.h"
@@ -592,7 +596,13 @@ void loop() {
 #ifdef E_PAPER_DISPLAY
         // Back has no action on the main menu. Consume it so an unread Escape
         // cannot keep the input task from accepting navigation or Select.
-        check(EscPress);
+        if (check(EscPress)) {
+#if defined(STICKY_MONOCHROME)
+            setStickyActiveButton(3);
+            stickyAudioFeedback(1600, 30);
+            refreshStickyButtonRail();
+#endif
+        }
 #endif
         if (touchPoint.pressed) {
             int i = 0;
@@ -617,6 +627,35 @@ void loop() {
                 }
                 i++;
             }
+#if defined(STICKY_MONOCHROME)
+            if (touchPoint.x >= 420) {
+                if (touchPoint.y < 140) {
+                    setStickyActiveButton(0);
+                    stickyAudioFeedback(3000, 25);
+                    refreshStickyButtonRail();
+                    menuItems.at(index).action();
+                    tft->drawPixel(0, 0, 0);
+                    tft->fillScreen(BGCOLOR);
+                    pass_by = 0;
+                    returnToMenu = false;
+                    redraw = true;
+                    goto END;
+                } else if (touchPoint.y >= 140 && touchPoint.y < 250) {
+                    if (index == 0) index = opt - 1;
+                    else if (index > 0) index--;
+                    pass_by = 0;
+                    redraw = true;
+                    setStickyActiveButton(1);
+                    stickyAudioFeedback(2400, 15);
+                } else if (touchPoint.y >= 250 && touchPoint.y < 340) {
+                    index++;
+                    if ((index + 1) > opt) index = 0;
+                    redraw = true;
+                    setStickyActiveButton(2);
+                    stickyAudioFeedback(2000, 15);
+                }
+            }
+#endif
             touchPoint.Clear();
         }
         if (check(PrevPress)) {
@@ -624,6 +663,10 @@ void loop() {
             else if (index > 0) index--;
             pass_by = 0;
             redraw = true;
+#if defined(STICKY_MONOCHROME)
+            setStickyActiveButton(1);
+            stickyAudioFeedback(2400, 15);
+#endif
         }
         // DW Btn to next item
         if (check(NextPress)) {
@@ -633,6 +676,10 @@ void loop() {
                 if (!dev_mode) pass_by++;
             }
             redraw = true;
+#if defined(STICKY_MONOCHROME)
+            setStickyActiveButton(2);
+            stickyAudioFeedback(2000, 15);
+#endif
         }
 #if defined(HAS_KEYBOARD) || defined(HAS_5_BUTTONS) || defined(USE_CARDKB2)
         auto moveMainMenuRow = [&](int direction) {
@@ -675,6 +722,11 @@ void loop() {
 
         // Select and run function
         if (check(SelPress)) {
+#if defined(STICKY_MONOCHROME)
+            setStickyActiveButton(0);
+            stickyAudioFeedback(3000, 25);
+            refreshStickyButtonRail();
+#endif
             menuItems.at(index).action(); // Call the action associated with the selected menu item
             tft->drawPixel(0, 0, 0);
             tft->fillScreen(BGCOLOR);
@@ -708,6 +760,14 @@ void loop() {
                     redraw = true;
                     goto END;
                 }
+            }
+        }
+#endif
+#if defined(STICKY_MONOCHROME)
+        if (getStickyActiveButton() != -1 && (launcherMillis() - getStickyActiveButtonTime() > 400)) {
+            if (launcherGpioRead(4) != LOW && launcherGpioRead(5) != LOW && launcherGpioRead(6) != LOW) {
+                resetStickyActiveButton();
+                refreshStickyButtonRail();
             }
         }
 #endif

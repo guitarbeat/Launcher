@@ -4,6 +4,7 @@
 
 #include "display.h"
 #include "interface.h"
+#include "idf/launcher_platform.h"
 #include "font5x7_rot.h"
 #include <cmath>
 #include <algorithm>
@@ -246,9 +247,45 @@ static int getTextWidthRotated(const char *str, uint8_t size) {
 // Dynamic Notches (Exact Hardware Chassis Alignment)
 // ---------------------------------------------------------------------------
 
-void drawRightButtonRail(const char* confirm, const char* up, const char* down, const char* back) {
+static int s_activeButton = -1;
+static unsigned long s_activeButtonTime = 0;
+
+void setStickyActiveButton(int btn) {
+    s_activeButton = btn;
+    s_activeButtonTime = launcherMillis();
+}
+
+int getStickyActiveButton() {
+    return s_activeButton;
+}
+
+unsigned long getStickyActiveButtonTime() {
+    return s_activeButtonTime;
+}
+
+void resetStickyActiveButton() {
+    s_activeButton = -1;
+}
+
+void stickyAudioFeedback(uint32_t freq, uint32_t ms) {
+#if defined(STICKY_MONOCHROME)
+    constexpr uint8_t BUZZER_PIN = 48;
+    ledcAttach(BUZZER_PIN, 2000, 10);
+    ledcWriteTone(BUZZER_PIN, freq);
+    delay(ms);
+    ledcWriteTone(BUZZER_PIN, 0);
+    ledcWrite(BUZZER_PIN, 0);
+    ledcDetach(BUZZER_PIN);
+#else
+    (void)freq;
+    (void)ms;
+#endif
+}
+
+void drawRightButtonRail(const char* confirm, const char* up, const char* down, const char* back, int pressedBtn) {
+    if (pressedBtn < 0) pressedBtn = s_activeButton;
     constexpr int kNotchW = 32;
-    const int notchX = tftWidth - kNotchW; // 480 - 32 = 448
+    constexpr int kActiveNotchW = 44; // 12px deeper indent on active press
 
     // Physical button centers on Seeed Studio reTerminal Sticky (Portrait):
     // Button 0 (Top, GPIO 4): AI / Power / Confirm (centerY = 75)
@@ -259,12 +296,16 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
 
     for (int i = 0; i < 3; ++i) {
         if (!labels[i] || !labels[i][0]) continue;
+        const bool isPressed = (pressedBtn == i);
+        const int tabW = isPressed ? kActiveNotchW : kNotchW;
+        const int notchX = tftWidth - tabW; // 436 when pressed, 448 when resting
+
         int textH = getTextWidthRotated(labels[i], 2);
 
         // Organic curved tab with smooth tangent fillets to bezel edge
         constexpr int rTrans = 14;
-        int faceH = textH + 6;
-        if (faceH < 24) faceH = 24;
+        int faceH = textH + (isPressed ? 10 : 6);
+        if (faceH < 26) faceH = 26;
         int centerY = centers[i];
         int yTop = centerY - faceH / 2;
         int yBot = centerY + faceH / 2;
@@ -277,8 +318,11 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
         const int yStart = yTop - 2 * rTrans;
         const int yEnd = yBot + 2 * rTrans;
         constexpr int bezelX = 480;
-        constexpr float halfW = kNotchW / 2.0f;
-        constexpr float invR = 1.0f / rTrans;
+        const float halfW = tabW / 2.0f;
+        const float invR = 1.0f / rTrans;
+
+        // Ensure clear margin on screen to cleanly overwrite any old state/arrow
+        tft->fillRect(tftWidth - kActiveNotchW - 12, yStart, 16, yEnd - yStart + 1, WHITE);
 
         for (int y = yStart; y <= yEnd; ++y) {
             int xEdge = notchX;
@@ -301,35 +345,71 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
                 float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
                 xEdge = bezelX - (int)(dx + 0.5f);
             }
+
             if (xEdge < bezelX) {
-                tft->drawFastHLine(xEdge, y, bezelX - xEdge, BLACK);
+                if (isPressed) {
+                    // Tactile inverted tab: 2-pixel black contour border, white interior
+                    tft->drawPixel(xEdge, y, BLACK);
+                    if (xEdge + 1 < bezelX) tft->drawPixel(xEdge + 1, y, BLACK);
+                    if (xEdge + 2 < bezelX) {
+                        tft->drawFastHLine(xEdge + 2, y, bezelX - (xEdge + 2), WHITE);
+                    }
+                } else {
+                    // Resting state: solid black tab
+                    tft->drawFastHLine(xEdge, y, bezelX - xEdge, BLACK);
+                }
             }
         }
 
-        // High-contrast inverse white bold text centered inside the notch
-        int charX = notchX + (kNotchW - 14) / 2; // 14px glyph height in X
+        // Render label text and indicator
+        int charX = notchX + (tabW - 14) / 2; // 14px glyph height in X
         int startY = centerY + textH / 2;
-        drawTextRotated90CW(charX, startY, labels[i], 2, WHITE);
+
+        if (isPressed) {
+            // Bold black text on white tab
+            drawTextRotated90CW(charX, startY, labels[i], 2, BLACK);
+            // Solid black chevron pointing inward into the card deck
+            tft->fillTriangle(notchX - 8, centerY, notchX - 1, centerY - 6, notchX - 1, centerY + 6, BLACK);
+        } else {
+            // Inverse white bold text centered inside black notch
+            drawTextRotated90CW(charX, startY, labels[i], 2, WHITE);
+        }
     }
 
     // 2-button chord (Button 1 + Button 2 simultaneously):
     // Renders a wireframe bracket connecting Button 1 and Button 2 with [ 2 ] glyph,
     // plus a wireframe pill below Button 2 with the action label (Back / Home).
     if (back && back[0]) {
+        const bool chordActive = (pressedBtn == 3);
         constexpr int bracketX = 442;
         // Upper hook: from Button 1 notch left to bracket line, down to badge
         tft->drawLine(bracketX, 205, bracketX + 6, 205, BLACK);
         tft->drawLine(bracketX, 205, bracketX, 239, BLACK);
+        if (chordActive) {
+            tft->drawLine(bracketX + 1, 205, bracketX + 6, 205, BLACK);
+            tft->drawLine(bracketX + 1, 205, bracketX + 1, 239, BLACK);
+        }
         // Lower hook: from badge down to Button 2 center, right to notch
         tft->drawLine(bracketX, 259, bracketX, 292, BLACK);
         tft->drawLine(bracketX, 292, bracketX + 6, 292, BLACK);
+        if (chordActive) {
+            tft->drawLine(bracketX + 1, 259, bracketX + 1, 292, BLACK);
+            tft->drawLine(bracketX + 1, 292, bracketX + 6, 292, BLACK);
+        }
 
         // [ 2 ] badge centered between Button 1 and Button 2 (Y = 249)
-        tft->fillRoundRect(bracketX - 6, 240, 14, 18, 3, WHITE);
-        tft->drawRoundRect(bracketX - 6, 240, 14, 18, 3, BLACK);
-        tft->setTextSize(1);
-        tft->setTextColor(BLACK, WHITE);
-        tft->drawString("2", bracketX - 3, 244);
+        if (chordActive) {
+            tft->fillRoundRect(bracketX - 6, 240, 14, 18, 3, BLACK);
+            tft->setTextSize(1);
+            tft->setTextColor(WHITE, BLACK);
+            tft->drawString("2", bracketX - 3, 244);
+        } else {
+            tft->fillRoundRect(bracketX - 6, 240, 14, 18, 3, WHITE);
+            tft->drawRoundRect(bracketX - 6, 240, 14, 18, 3, BLACK);
+            tft->setTextSize(1);
+            tft->setTextColor(BLACK, WHITE);
+            tft->drawString("2", bracketX - 3, 244);
+        }
 
         // Wireframe chord action indicator below Button 2
         constexpr int chordCenterY = 360;
@@ -337,11 +417,27 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
         int chordH = labelH + 16;
         if (chordH < 56) chordH = 56;
         int chordY = chordCenterY - chordH / 2;
-        tft->fillRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, WHITE);
-        tft->drawRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
-        int charX = (notchX + 4) + ((kNotchW - 4) - 14) / 2;
-        int startY = chordCenterY + labelH / 2;
-        drawTextRotated90CW(charX, startY, back, 2, BLACK);
+        int notchX = tftWidth - kNotchW;
+        if (chordActive) {
+            tft->fillRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
+            tft->drawRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
+            int charX = (notchX + 4) + ((kNotchW - 4) - 14) / 2;
+            int startY = chordCenterY + labelH / 2;
+            drawTextRotated90CW(charX, startY, back, 2, WHITE);
+        } else {
+            tft->fillRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, WHITE);
+            tft->drawRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
+            int charX = (notchX + 4) + ((kNotchW - 4) - 14) / 2;
+            int startY = chordCenterY + labelH / 2;
+            drawTextRotated90CW(charX, startY, back, 2, BLACK);
+        }
+    }
+}
+
+void refreshStickyButtonRail(const char* confirm, const char* up, const char* down, const char* back) {
+    drawRightButtonRail(confirm, up, down, back, s_activeButton);
+    if (tft && tft->native()) {
+        tft->native()->displayWindow(424, 40, 56, 360);
     }
 }
 
@@ -455,7 +551,7 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
     if (fullRedraw) {
         tft->fillScreen(WHITE);
         drawHeader();
-        drawRightButtonRail("RUN", "UP", "DOWN", nullptr);
+        drawRightButtonRail("RUN", "UP", "DOWN", nullptr, s_activeButton);
 
         // Scroll indicators centered in card content area (x = 224)
         if (startIdx > 0) {
@@ -493,6 +589,8 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
                 drawSingleCard(slot, itemIdx, opt[itemIdx], (itemIdx == index));
             }
         }
+        // Always refresh dynamic notches so they animate on key presses
+        drawRightButtonRail("RUN", "UP", "DOWN", nullptr, s_activeButton);
     }
 }
 
