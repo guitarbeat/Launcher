@@ -1123,3 +1123,5 @@ bool __attribute__((weak)) isCharging() {
 #endif
     return charging;
 }
+
+float __attribute__((weak)) getTemperatureF() { return 0.0f; }

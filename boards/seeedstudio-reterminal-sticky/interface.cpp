@@ -238,6 +238,28 @@ void _post_setup_gpio() {
     // (same 800x480 native panel geometry).
 }
 
+float getTemperatureF() {
+    static float cached = 0.0f;
+    static unsigned long lastPoll = 0;
+    const unsigned long now = launcherMillis();
+    if (lastPoll != 0 && (now - lastPoll) < 2500) return cached;
+    lastPoll = now;
+
+    // SHT40 high precision measure: command 0xFD on Wire1
+    Wire1.beginTransmission(0x44);
+    Wire1.write(0xFD);
+    if (Wire1.endTransmission() != 0) return cached;
+    launcherDelayMs(10);
+    if (Wire1.requestFrom(0x44, 6) < 6) return cached;
+
+    uint8_t b[6];
+    for (int i = 0; i < 6; i++) b[i] = Wire1.read();
+    uint16_t tRaw = ((uint16_t)b[0] << 8) | b[1];
+    float tempC = -45.0f + 175.0f * ((float)tRaw / 65535.0f);
+    cached = tempC * 1.8f + 32.0f;
+    return cached;
+}
+
 int getBattery() {
     // The launcher asks on every header redraw; cache it and keep the last
     // good reading on an I2C error rather than blink to 0.

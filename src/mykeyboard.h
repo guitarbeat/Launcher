@@ -22,6 +22,7 @@ void __attribute__((weak)) checkReboot();
 
 // It is here to not create a new set of files just to use AXP192 library again
 int __attribute__((weak)) getBattery();
+float __attribute__((weak)) getTemperatureF();
 
 // true while the battery is being charged; drives the bolt on the battery icon
 bool __attribute__((weak)) isCharging();

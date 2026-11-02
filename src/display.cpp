@@ -1264,7 +1264,15 @@ void drawBatteryStatus(uint8_t bat, bool charging) {
     tft->setTextColor(FGCOLOR, BGCOLOR);
     // Excludes the Marauder Mini and anything else that short: no room for a
     // percentage beside the gauge.
-    if (panelHeight() > 140) tft->drawRightString("  " + String(bat) + "%", tftWidth - 45 - RES, 12, 1);
+    if (panelHeight() > 140) {
+        float tempF = getTemperatureF();
+        String statusStr = "";
+        if (tempF > 0.0f) {
+            statusStr += String((int)round(tempF)) + " F  ";
+        }
+        statusStr += String(bat) + "%";
+        tft->drawRightString("  " + statusStr, tftWidth - 45 - RES, 12, 1);
+    }
     tft->fillRoundRect(tftWidth - 40 - RES, 9, 30, _fp * LH + 5, 2, BGCOLOR);
     tft->fillRoundRect(tftWidth - 40 - RES, 9, 30 * bat / 100, _fp * LH + 5, 2, FGCOLOR);
     tft->drawLine(tftWidth - 30 - RES, 9, tftWidth - 30 - RES, 9 + _fp * LH + 6, BGCOLOR);
