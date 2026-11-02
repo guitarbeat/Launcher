@@ -248,21 +248,15 @@ static int getTextWidthRotated(const char *str, uint8_t size) {
 // ---------------------------------------------------------------------------
 
 static int s_activeButton = -1;
-static int s_notchPhase = 0; // 0: resting, 1: engaging, 2: peak depress, 3: rebound
 static unsigned long s_activeButtonTime = 0;
 
-void setStickyActiveButton(int btn, int phase) {
+void setStickyActiveButton(int btn) {
     s_activeButton = btn;
-    s_notchPhase = phase;
     s_activeButtonTime = launcherMillis();
 }
 
 int getStickyActiveButton() {
     return s_activeButton;
-}
-
-int getStickyNotchPhase() {
-    return s_notchPhase;
 }
 
 unsigned long getStickyActiveButtonTime() {
@@ -271,7 +265,6 @@ unsigned long getStickyActiveButtonTime() {
 
 void resetStickyActiveButton() {
     s_activeButton = -1;
-    s_notchPhase = 0;
 }
 
 void stickyAudioFeedback(uint32_t freq, uint32_t ms) {
@@ -290,36 +283,27 @@ void stickyAudioFeedback(uint32_t freq, uint32_t ms) {
 #endif
 }
 
-void drawRightButtonRail(const char* confirm, const char* up, const char* down, const char* back, int pressedBtn, int animPhase) {
-    if (pressedBtn < 0) {
-        pressedBtn = s_activeButton;
-        animPhase = s_notchPhase;
-    }
+void drawRightButtonRail(const char* confirm, const char* up, const char* down, const char* back, int pressedBtn) {
+    if (pressedBtn < 0) pressedBtn = s_activeButton;
+    constexpr int kNotchW = 32;
+    const int notchX = tftWidth - kNotchW; // 480 - 32 = 448
 
-    constexpr int centers[3] = {75, 205, 292};
+    // Physical button centers on Seeed Studio reTerminal Sticky (Portrait):
+    // Button 0 (Top, GPIO 4): AI / Power / Confirm (centerY = 75)
+    // Button 1 (Middle, GPIO 5): Up / Prev (centerY = 205)
+    // Button 2 (Bottom, GPIO 6): Down / Next (centerY = 292)
     const char* labels[3] = {confirm, up, down};
+    constexpr int centers[3] = {75, 205, 292};
 
     for (int i = 0; i < 3; ++i) {
         if (!labels[i] || !labels[i][0]) continue;
         const bool isPressed = (pressedBtn == i);
-        const int phase = isPressed ? animPhase : 0;
-
-        // Frame geometries:
-        // Phase 0 (Resting): width 32px (notchX = 448)
-        // Phase 1 (Engaging): width 38px (notchX = 442)
-        // Phase 2 (Peak Depress): width 44px (notchX = 436)
-        // Phase 3 (Rebound): width 35px (notchX = 445)
-        int tabW = 32;
-        if (phase == 1) tabW = 38;
-        else if (phase == 2) tabW = 44;
-        else if (phase == 3) tabW = 35;
-
-        const int notchX = tftWidth - tabW;
-
         int textH = getTextWidthRotated(labels[i], 2);
+
+        // Organic curved tab with smooth tangent fillets to bezel edge
         constexpr int rTrans = 14;
-        int faceH = textH + (phase == 2 ? 10 : (phase == 1 ? 8 : 6));
-        if (faceH < 26) faceH = 26;
+        int faceH = textH + 6;
+        if (faceH < 24) faceH = 24;
         int centerY = centers[i];
         int yTop = centerY - faceH / 2;
         int yBot = centerY + faceH / 2;
@@ -332,11 +316,8 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
         const int yStart = yTop - 2 * rTrans;
         const int yEnd = yBot + 2 * rTrans;
         constexpr int bezelX = 480;
-        const float halfW = tabW / 2.0f;
-        const float invR = 1.0f / rTrans;
-
-        // Anti-ghosting: scrub the bounding box to pure white before drawing any frame
-        tft->fillRect(422, yStart - 1, 480 - 422, yEnd - yStart + 3, WHITE);
+        constexpr float halfW = kNotchW / 2.0f;
+        constexpr float invR = 1.0f / rTrans;
 
         for (int y = yStart; y <= yEnd; ++y) {
             int xEdge = notchX;
@@ -361,45 +342,29 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
             }
 
             if (xEdge < bezelX) {
-                if (phase == 2) {
-                    // Peak Depress: High-contrast inverted white tab with 2px solid black contour
+                if (isPressed) {
+                    // Click color change: 2-pixel black outline, white interior
                     tft->drawPixel(xEdge, y, BLACK);
                     if (xEdge + 1 < bezelX) tft->drawPixel(xEdge + 1, y, BLACK);
                     if (xEdge + 2 < bezelX) {
                         tft->drawFastHLine(xEdge + 2, y, bezelX - (xEdge + 2), WHITE);
                     }
-                } else if (phase == 1) {
-                    // Engaging: Solid black tab with crisp white accent contour on leading edge
-                    tft->drawFastHLine(xEdge, y, bezelX - xEdge, BLACK);
-                    if (y >= yTop && y <= yBot) {
-                        tft->drawPixel(xEdge + 1, y, WHITE);
-                        tft->drawPixel(xEdge + 2, y, WHITE);
-                    }
                 } else {
-                    // Resting (0) and Rebound (3): Solid black tab
+                    // Static resting color: solid black tab
                     tft->drawFastHLine(xEdge, y, bezelX - xEdge, BLACK);
                 }
             }
         }
 
-        // Render label text and directional indicator
-        int charX = notchX + (tabW - 14) / 2;
+        // Label text: rotated 90 CW
+        int charX = notchX + (kNotchW - 14) / 2;
         int startY = centerY + textH / 2;
 
-        if (phase == 2) {
-            // Peak: Bold black text on white tab + solid black chevron arrow
+        if (isPressed) {
+            // Click state: bold black text on white tab
             drawTextRotated90CW(charX, startY, labels[i], 2, BLACK);
-            tft->fillTriangle(notchX - 8, centerY, notchX - 1, centerY - 6, notchX - 1, centerY + 6, BLACK);
-        } else if (phase == 1) {
-            // Engaging: Bold white text + bright white center pip
-            drawTextRotated90CW(charX, startY, labels[i], 2, WHITE);
-            tft->fillCircle(notchX + 5, centerY, 2, WHITE);
-        } else if (phase == 3) {
-            // Rebound: Bold white text + hollow chevron arrow receding into bezel
-            drawTextRotated90CW(charX, startY, labels[i], 2, WHITE);
-            tft->drawTriangle(notchX - 5, centerY, notchX, centerY - 4, notchX, centerY + 4, BLACK);
         } else {
-            // Resting: Bold white text centered in black tab
+            // Resting state: bold white text on black tab
             drawTextRotated90CW(charX, startY, labels[i], 2, WHITE);
         }
     }
@@ -410,16 +375,8 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
         constexpr int bracketX = 442;
         tft->drawLine(bracketX, 205, bracketX + 6, 205, BLACK);
         tft->drawLine(bracketX, 205, bracketX, 239, BLACK);
-        if (chordActive) {
-            tft->drawLine(bracketX + 1, 205, bracketX + 6, 205, BLACK);
-            tft->drawLine(bracketX + 1, 205, bracketX + 1, 239, BLACK);
-        }
         tft->drawLine(bracketX, 259, bracketX, 292, BLACK);
         tft->drawLine(bracketX, 292, bracketX + 6, 292, BLACK);
-        if (chordActive) {
-            tft->drawLine(bracketX + 1, 259, bracketX + 1, 292, BLACK);
-            tft->drawLine(bracketX + 1, 292, bracketX + 6, 292, BLACK);
-        }
 
         if (chordActive) {
             tft->fillRoundRect(bracketX - 6, 240, 14, 18, 3, BLACK);
@@ -439,17 +396,16 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
         int chordH = labelH + 16;
         if (chordH < 56) chordH = 56;
         int chordY = chordCenterY - chordH / 2;
-        int notchX = tftWidth - 32;
         if (chordActive) {
-            tft->fillRoundRect(notchX + 4, chordY, 32 - 4, chordH, 5, BLACK);
-            tft->drawRoundRect(notchX + 4, chordY, 32 - 4, chordH, 5, BLACK);
-            int charX = (notchX + 4) + ((32 - 4) - 14) / 2;
+            tft->fillRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
+            tft->drawRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
+            int charX = (notchX + 4) + ((kNotchW - 4) - 14) / 2;
             int startY = chordCenterY + labelH / 2;
             drawTextRotated90CW(charX, startY, back, 2, WHITE);
         } else {
-            tft->fillRoundRect(notchX + 4, chordY, 32 - 4, chordH, 5, WHITE);
-            tft->drawRoundRect(notchX + 4, chordY, 32 - 4, chordH, 5, BLACK);
-            int charX = (notchX + 4) + ((32 - 4) - 14) / 2;
+            tft->fillRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, WHITE);
+            tft->drawRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
+            int charX = (notchX + 4) + ((kNotchW - 4) - 14) / 2;
             int startY = chordCenterY + labelH / 2;
             drawTextRotated90CW(charX, startY, back, 2, BLACK);
         }
@@ -457,7 +413,7 @@ void drawRightButtonRail(const char* confirm, const char* up, const char* down, 
 }
 
 void refreshStickyButtonRail(const char* confirm, const char* up, const char* down, const char* back) {
-    drawRightButtonRail(confirm, up, down, back, s_activeButton, s_notchPhase);
+    drawRightButtonRail(confirm, up, down, back, s_activeButton);
     if (tft) {
         tft->display(false);
     }
@@ -572,7 +528,7 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
     if (fullRedraw) {
         tft->fillScreen(WHITE);
         drawHeader();
-        drawRightButtonRail("RUN", "UP", "DOWN", nullptr, s_activeButton, s_notchPhase);
+        drawRightButtonRail("RUN", "UP", "DOWN", nullptr, s_activeButton);
 
         // Scroll indicators centered in card content area (x = 224)
         if (startIdx > 0) {
@@ -610,8 +566,7 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
                 drawSingleCard(slot, itemIdx, opt[itemIdx], (itemIdx == index));
             }
         }
-        // Always refresh dynamic notches so they animate on key presses
-        drawRightButtonRail("RUN", "UP", "DOWN", nullptr, s_activeButton, s_notchPhase);
+        drawRightButtonRail("RUN", "UP", "DOWN", nullptr, s_activeButton);
     }
 }
 

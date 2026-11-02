@@ -599,7 +599,7 @@ void loop() {
         // Back / Chord triggers an instant anti-ghosting clean screen refresh!
         if (check(EscPress)) {
 #if defined(STICKY_MONOCHROME)
-            setStickyActiveButton(3, 2);
+            setStickyActiveButton(3);
             stickyAudioFeedback(1600, 30);
             tft->fillScreen(WHITE);
             drawStickyCardDeckMenu(menuItems, index, true);
@@ -641,7 +641,7 @@ void loop() {
                 s_navCount = 0;
             } else if (touchPoint.x >= 420) {
                 if (touchPoint.y < 140) {
-                    setStickyActiveButton(0, 2);
+                    setStickyActiveButton(0);
                     stickyAudioFeedback(3000, 25);
                     refreshStickyButtonRail();
                     menuItems.at(index).action();
@@ -657,14 +657,14 @@ void loop() {
                     pass_by = 0;
                     redraw = true;
                     s_navCount++;
-                    setStickyActiveButton(1, 2);
+                    setStickyActiveButton(1);
                     stickyAudioFeedback(2400, 15);
                 } else if (touchPoint.y >= 250 && touchPoint.y < 340) {
                     index++;
                     if ((index + 1) > opt) index = 0;
                     redraw = true;
                     s_navCount++;
-                    setStickyActiveButton(2, 2);
+                    setStickyActiveButton(2);
                     stickyAudioFeedback(2000, 15);
                 }
             }
@@ -677,7 +677,7 @@ void loop() {
             pass_by = 0;
             redraw = true;
 #if defined(STICKY_MONOCHROME)
-            s_navCount++; setStickyActiveButton(1, 2);
+            s_navCount++; setStickyActiveButton(1);
             stickyAudioFeedback(2400, 15);
 #endif
         }
@@ -690,7 +690,7 @@ void loop() {
             }
             redraw = true;
 #if defined(STICKY_MONOCHROME)
-            s_navCount++; setStickyActiveButton(2, 2);
+            s_navCount++; setStickyActiveButton(2);
             stickyAudioFeedback(2000, 15);
 #endif
         }
@@ -777,23 +777,10 @@ void loop() {
         }
 #endif
 #if defined(STICKY_MONOCHROME)
-        if (getStickyActiveButton() != -1) {
-            unsigned long elapsed = launcherMillis() - getStickyActiveButtonTime();
+        if (getStickyActiveButton() != -1 && (launcherMillis() - getStickyActiveButtonTime() > 300)) {
             if (launcherGpioRead(4) != LOW && launcherGpioRead(5) != LOW && launcherGpioRead(6) != LOW) {
-                if (getStickyNotchPhase() == 2 && elapsed > 200) {
-                    setStickyActiveButton(getStickyActiveButton(), 3); // Phase 3: Rebound
-                    refreshStickyButtonRail();
-                } else if (getStickyNotchPhase() == 3 && elapsed > 400) {
-                    resetStickyActiveButton(); // Phase 0: Resting
-                    if (s_navCount >= 8) {
-                        s_navCount = 0;
-                        tft->fillScreen(WHITE);
-                        drawStickyCardDeckMenu(menuItems, index, true);
-                        tft->display(true);
-                    } else {
-                        refreshStickyButtonRail();
-                    }
-                }
+                resetStickyActiveButton();
+                refreshStickyButtonRail();
             }
         }
 #endif
