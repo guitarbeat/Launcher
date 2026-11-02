@@ -4,6 +4,7 @@
 
 #include "display.h"
 #include "interface.h"
+#include "font5x7_rot.h"
 #include <Arduino.h>
 
 enum StickyIconType {
@@ -199,48 +200,159 @@ static void drawStickyIcon(StickyIconType type, int x, int y, uint16_t color) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Rotated 90 Deg Clockwise Text Rendering (Replicating Sticky Fingers Chrome)
+// ---------------------------------------------------------------------------
+
+static void drawCharRotated90CW(int x, int y, char c, uint8_t size, uint16_t color) {
+    if (c < 32 || c > 126) c = ' ';
+    const uint8_t *glyph = font5x7_ascii32_126[c - 32];
+    for (int col = 0; col < 5; ++col) {
+        uint8_t line = pgm_read_byte(&glyph[col]);
+        for (int row = 0; row < 7; ++row) {
+            if (line & (1 << row)) {
+                if (size == 1) {
+                    tft->drawPixel(x + row, y - col, color);
+                } else {
+                    tft->fillRect(x + row * size, y - (col + 1) * size + 1, size, size, color);
+                }
+            }
+        }
+    }
+}
+
+static int drawTextRotated90CW(int x, int y, const char *str, uint8_t size, uint16_t color) {
+    if (!str) return 0;
+    int curY = y;
+    int stepY = 6 * size;
+    while (*str) {
+        drawCharRotated90CW(x, curY, *str, size, color);
+        curY -= stepY;
+        str++;
+    }
+    return y - curY;
+}
+
+static int getTextWidthRotated(const char *str, uint8_t size) {
+    if (!str) return 0;
+    int len = strlen(str);
+    if (len == 0) return 0;
+    return (len - 1) * 6 * size + 5 * size;
+}
+
+// ---------------------------------------------------------------------------
+// Right Edge Button Rail (Exact Hardware Chassis Alignment)
+// ---------------------------------------------------------------------------
+
+void drawRightButtonRail(const char* confirm, const char* up, const char* down, const char* back) {
+    constexpr int kSidebarWidth = 54;
+    const int railX = tftWidth - kSidebarWidth; // 480 - 54 = 426
+    constexpr int pillW = 24;
+    const int pillX = railX + (kSidebarWidth - pillW) / 2; // 441
+    constexpr int minPillH = 52;
+    constexpr int maxPillH = 78;
+
+    // Full vertical divider line at x = 426
+    tft->drawFastVLine(railX, 0, 800, BLACK);
+
+    // Physical order on the portrait chassis (top to bottom on right edge):
+    // Button 0 (Top, GPIO 4): AI / Power / Confirm (centerY = 35)
+    // Button 1 (Middle, GPIO 5): Up / Prev (centerY = 105)
+    // Button 2 (Bottom, GPIO 6): Down / Next (centerY = 175)
+    const char* labels[3] = {confirm, up, down};
+    constexpr int centers[3] = {35, 105, 175};
+
+    for (int i = 0; i < 3; ++i) {
+        if (!labels[i] || !labels[i][0]) continue;
+        int textH = getTextWidthRotated(labels[i], 2);
+        int pillH = textH + 16;
+        if (pillH < minPillH) pillH = minPillH;
+        if (pillH > maxPillH) pillH = maxPillH;
+        int pillY = centers[i] - pillH / 2;
+
+        // Rounded tactile pill matching chassis button
+        tft->fillRoundRect(pillX, pillY, pillW, pillH, 4, WHITE);
+        tft->drawRoundRect(pillX, pillY, pillW, pillH, 4, BLACK);
+
+        // Center rotated text inside pill
+        int charX = pillX + (pillW - 14) / 2; // 14px glyph height in X
+        int startY = centers[i] + textH / 2;
+        drawTextRotated90CW(charX, startY, labels[i], 2, BLACK);
+    }
+
+    // Button 0 (Confirm) is also the physical Power key.
+    // Show rotated "HOLD SLEEP" beside it (railX + 2 = 428)
+    if (labels[0] && labels[0][0]) {
+        constexpr const char* holdHint = "HOLD SLEEP";
+        int hintH = getTextWidthRotated(holdHint, 1);
+        drawTextRotated90CW(railX + 2, 78 + hintH / 2, holdHint, 1, BLACK);
+    }
+
+    // Chord bracket connecting Button 1 (105) and Button 2 (175)
+    // Indicates the 2-button chord (Page Up + Page Down together = Back)
+    if (back && back[0]) {
+        tft->drawFastVLine(railX + 5, 105, 70, BLACK);
+        tft->drawFastHLine(railX + 5, 105, 5, BLACK);
+        tft->drawFastHLine(railX + 5, 175, 5, BLACK);
+
+        // [ 2 ] badge centered at Y = 140
+        tft->fillRoundRect(railX + 1, 129, 13, 23, 4, WHITE);
+        tft->drawRoundRect(railX + 1, 129, 13, 23, 4, BLACK);
+        tft->setTextSize(1);
+        tft->setTextColor(BLACK, WHITE);
+        tft->drawString("2", railX + 4, 137);
+
+        // Rotated chord action label below Button 2
+        int labelH = getTextWidthRotated(back, 1);
+        drawTextRotated90CW(railX + 18, 250 + labelH / 2, back, 1, BLACK);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Header & Card Rendering
+// ---------------------------------------------------------------------------
+
 static void drawHeader() {
     tft->setTextSize(_fm); // Size 3 (24px)
     tft->setTextColor(BLACK, WHITE);
-    tft->drawString("STICKY MULTI-BOOT", 16, 12);
+    tft->drawString("STICKY LAUNCHER", 14, 12);
 
     tft->setTextSize(1);
     tft->setTextColor(BLACK, WHITE);
-    tft->drawString("NAV: 3 BUTTONS ON RIGHT [^ UP] [v DOWN] [* SELECT]", 16, 38);
+    tft->drawString("CARD DECK / MULTI-BOOT", 14, 38);
 
     int bat = getBattery();
     if (bat < 0) bat = 0;
     if (bat > 100) bat = 100;
     String batStr = String(bat) + "%";
     tft->setTextSize(_fp); // Size 2 (16px)
-    tft->drawRightString(batStr, tftWidth - 52, 14, 1);
+    tft->drawRightString(batStr, 426 - 46, 14, 1);
 
     // Battery outline
-    tft->drawRoundRect(tftWidth - 46, 14, 30, 15, 2, BLACK);
+    tft->drawRoundRect(426 - 42, 14, 30, 15, 2, BLACK);
     int fillW = (24 * bat) / 100;
     if (fillW > 0) {
-        tft->fillRect(tftWidth - 43, 17, fillW, 9, BLACK);
+        tft->fillRect(426 - 39, 17, fillW, 9, BLACK);
     }
-    tft->fillRect(tftWidth - 16, 18, 2, 7, BLACK); // Tip
+    tft->fillRect(426 - 12, 18, 2, 7, BLACK); // Tip
 
-    // Header divider line
-    tft->drawLine(16, 52, tftWidth - 16, 52, BLACK);
-    tft->drawLine(16, 53, tftWidth - 16, 53, BLACK);
+    // Header divider line ending at rail (x = 426)
+    tft->drawFastHLine(12, 52, 426 - 12, BLACK);
+    tft->drawFastHLine(12, 53, 426 - 12, BLACK);
 }
 
 static void drawSingleCard(int slotIdx, int itemIdx, const MenuOptions &item, bool isSelected) {
     CardInfo info = getCardInfo(item);
-    int x = 16;
+    int x = 12;
     int y = 60 + slotIdx * (92 + 8);
-    int w = tftWidth - 32;
+    int w = 402;
     int h = 92;
 
     if (isSelected) {
         tft->fillRoundRect(x, y, w, h, 6, BLACK);
 
-        int iconX = x + 14;
-        int iconY = y + (h - 32) / 2;
-        drawStickyIcon(info.icon, iconX, iconY, WHITE);
+        // Inverted card contents
+        drawStickyIcon(info.icon, x + 12, y + (h - 32) / 2, WHITE);
 
         tft->setTextSize(_fm);
         tft->setTextColor(WHITE, BLACK);
@@ -250,28 +362,17 @@ static void drawSingleCard(int slotIdx, int itemIdx, const MenuOptions &item, bo
         tft->setTextColor(WHITE, BLACK);
         tft->drawString(info.subtitle, x + 56, y + 46);
 
-        // Prominent action badge on right of selected card
-        int btnW = 124;
-        int btnH = 32;
-        int btnX = x + w - btnW - 14;
-        int btnY = y + (h - btnH) / 2;
-        tft->fillRoundRect(btnX, btnY, btnW, btnH, 4, WHITE);
-        tft->drawRoundRect(btnX, btnY, btnW, btnH, 4, BLACK);
-        tft->setTextSize(2);
-        tft->setTextColor(BLACK, WHITE);
-        tft->drawCentreString("[*] SELECT", btnX + btnW / 2, btnY + 8, 1);
-
         tft->setTextSize(1);
         tft->setTextColor(WHITE, BLACK);
-        tft->drawRightString(info.badge, btnX - 10, y + 16, 1);
+        tft->drawRightString(info.badge, x + w - 16, y + 16, 1);
+
+        // Tactile indicator pointing toward right button rail
+        tft->fillTriangle(x + w - 24, y + h / 2 - 8, x + w - 24, y + h / 2 + 8, x + w - 14, y + h / 2, WHITE);
     } else {
         tft->fillRoundRect(x, y, w, h, 6, WHITE);
         tft->drawRoundRect(x, y, w, h, 6, BLACK);
-        tft->drawRoundRect(x + 1, y + 1, w - 2, h - 2, 5, BLACK);
 
-        int iconX = x + 14;
-        int iconY = y + (h - 32) / 2;
-        drawStickyIcon(info.icon, iconX, iconY, BLACK);
+        drawStickyIcon(info.icon, x + 12, y + (h - 32) / 2, BLACK);
 
         tft->setTextSize(_fm);
         tft->setTextColor(BLACK, WHITE);
@@ -297,7 +398,7 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
         return;
     }
 
-    const int maxVisible = 6;
+    const int maxVisible = 7;
     int visibleCount = (size < maxVisible) ? size : maxVisible;
     int startIdx = 0;
     if (size > maxVisible) {
@@ -321,64 +422,38 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
     if (fullRedraw) {
         tft->fillScreen(WHITE);
         drawHeader();
+        drawRightButtonRail("RUN", "UP", "DOWN", "BACK");
 
-        // Scroll indicators
+        // Scroll indicators centered in card content area (x = 213)
         if (startIdx > 0) {
             tft->setTextSize(1);
             tft->setTextColor(BLACK, WHITE);
-            tft->drawCentreString("^ MORE ^", tftWidth / 2, 54, 1);
+            tft->drawCentreString("^ MORE ^", 213, 54, 1);
         }
         if (startIdx + visibleCount < size) {
             tft->setTextSize(1);
             tft->setTextColor(BLACK, WHITE);
-            tft->drawCentreString("v MORE v", tftWidth / 2, 706, 1);
+            tft->drawCentreString("v MORE v", 213, 756, 1);
         }
 
         for (int slot = 0; slot < visibleCount; ++slot) {
             int itemIdx = startIdx + slot;
-            int x = 16;
+            int x = 12;
             int y = 60 + slot * (92 + 8);
-            int w = tftWidth - 32;
+            int w = 402;
             int h = 92;
             opt[itemIdx].setCoords(x, y, w, h);
             drawSingleCard(slot, itemIdx, opt[itemIdx], (itemIdx == index));
         }
 
-        // Dedicated Hardware Navigation Guide Card (anchored above footer)
-        int legendY = 662;
-        int legendH = 104;
-        tft->fillRoundRect(16, legendY, tftWidth - 32, legendH, 6, WHITE);
-        tft->drawRoundRect(16, legendY, tftWidth - 32, legendH, 6, BLACK);
-        tft->drawRoundRect(17, legendY + 1, tftWidth - 34, legendH - 2, 5, BLACK);
-
-        // Header strip inside box
-        tft->fillRect(18, legendY + 2, tftWidth - 36, 24, BLACK);
-        tft->setTextSize(1);
-        tft->setTextColor(WHITE, BLACK);
-        tft->drawCentreString("CONTROLS: 3 HARDWARE BUTTONS ON RIGHT EDGE", tftWidth / 2, legendY + 8, 1);
-
-        // Button mappings (large, crisp, unmistakable)
-        tft->setTextSize(2);
-        tft->setTextColor(BLACK, WHITE);
-        tft->drawString("[^] TOP BTN  : UP", 28, legendY + 34);
-        tft->drawString("[v] MID BTN  : DOWN", 28, legendY + 56);
-        tft->drawString("[*] BOT BTN  : SELECT / RUN", 28, legendY + 78);
-
-        // Tips on right side of box
-        tft->setTextSize(1);
-        tft->drawRightString("HOLD [^+v] TOGETHER: BACK / ESC", tftWidth - 28, legendY + 40, 1);
-        tft->drawRightString("TOUCH: TAP CARDS DIRECTLY", tftWidth - 28, legendY + 66, 1);
-
-        // Bottom divider before touch footer
-        tft->drawLine(16, tftHeight - 2, tftWidth - 16, tftHeight - 2, BLACK);
         TouchFooter();
     } else {
         // Incremental fast-update of previous and newly selected cards
         for (int slot = 0; slot < visibleCount; ++slot) {
             int itemIdx = startIdx + slot;
-            int x = 16;
+            int x = 12;
             int y = 60 + slot * (92 + 8);
-            int w = tftWidth - 32;
+            int w = 402;
             int h = 92;
             opt[itemIdx].setCoords(x, y, w, h);
 

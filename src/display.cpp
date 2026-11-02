@@ -209,16 +209,16 @@ void TouchFooter(uint16_t color) {
 #if defined(STICKY_MONOCHROME)
     int footerY = tftHeight + 2;
     int footerH = (_fm * LH + 4);
-    tft->fillRect(0, footerY, tftWidth, footerH, WHITE);
-    tft->drawRect(4, footerY, tftWidth - 8, footerH - 1, BLACK);
+    // Keep touch footer inside 0..426 so the 54px right button rail is never overwritten
+    tft->fillRect(0, footerY, 426, footerH, WHITE);
+    tft->drawRect(4, footerY, 426 - 8, footerH - 1, BLACK);
 
-    // 4 tactile button guides: [^] UP, [v] DOWN, [*] SELECT, [^+v] BACK
+    // Touch navigation zones matching the 3 touch thirds (Prev, Sel, Next)
     tft->setTextSize(2);
     tft->setTextColor(BLACK, WHITE);
-    tft->drawString("[^] UP", 14, footerY + 5);
-    tft->drawCentreString("[v] DOWN", 165, footerY + 5, 1);
-    tft->drawCentreString("[*] SELECT", 310, footerY + 5, 1);
-    tft->drawRightString("[^+v] BACK", tftWidth - 14, footerY + 5, 1);
+    tft->drawString("<<< PREV", 14, footerY + 5);
+    tft->drawCentreString("SELECT", 213, footerY + 5, 1);
+    tft->drawRightString("NEXT >>>", 426 - 14, footerY + 5, 1);
 #elif defined(HAS_TOUCH) && !defined(HAS_TOUCH_NO_BORDER)
     tft->drawRoundRect(5 + RES, tftHeight + 2, tftWidth - 10 - 2 * RES, (_fm * LH + 4), 5, color);
     tft->setTextColor(color);
