@@ -158,7 +158,11 @@ int currentIndex;
 int rotation = ROTATION + ROT_OFFSET;
 bool sdcardMounted;
 bool onlyBins;
+#if defined(STICKY_MONOCHROME)
+bool bootToApp = false;
+#else
 bool bootToApp = true;
+#endif
 uint8_t bootTimer = 4;
 bool DDLB = false;
 int LauncherOnKey = -1;
@@ -359,6 +363,7 @@ void setup() {
     // Init any device specific hardware after TFT+SD+CardKb
     _late_setup_gpio();
 
+#if !defined(STICKY_MONOCHROME)
     // Start Bootscreen timer
     int i = launcherMillis();
     int j = 0;
@@ -449,6 +454,7 @@ void setup() {
 
         return (void)releaseHeapObjectsAndReboot();
     }
+#endif
 
 // If M5 or Enter button is pressed, continue from here
 Launcher:

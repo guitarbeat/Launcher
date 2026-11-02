@@ -51,9 +51,6 @@ static CardInfo getCardInfo(const MenuOptions &optItem) {
     if (name == "SD") {
         return {"MicroSD Library", "Browse SD Images & ROMs", "STORAGE", ICON_SD};
     }
-    if (name == "USB") {
-        return {"USB Card Reader", "Direct Mass Storage Drive", "USB-MSC", ICON_SD};
-    }
     if (name == "CFG") {
         return {"Settings", "Display, Wi-Fi & System", "SYSTEM", ICON_GEAR};
     }
