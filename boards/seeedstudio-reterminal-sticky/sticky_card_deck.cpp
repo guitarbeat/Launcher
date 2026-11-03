@@ -5,30 +5,24 @@
 #include "display.h"
 #include "interface.h"
 #include "idf/launcher_platform.h"
-#include "font5x7_rot.h"
+#include <StickyUI.h>
 #include <cmath>
 #include <algorithm>
 #include <Arduino.h>
 
-enum StickyIconType {
-    ICON_ANTENNA,
-    ICON_DOCUMENT,
-    ICON_BOOK,
-    ICON_MAP,
-    ICON_SD,
-    ICON_GEAR,
-    ICON_WIFI,
-    ICON_CHIP,
-    ICON_CLOUD,
-    ICON_POWER,
-    ICON_GENERIC
+using stickyui::Icon;
+
+// Adapts the GxEPD2 tft to StickyUI's two-call canvas; all chrome comes from lib/StickyUI.
+struct TftCanvas {
+    void fillRect(int x, int y, int w, int h, bool black) { tft->fillRect(x, y, w, h, black ? BLACK : WHITE); }
+    void pixel(int x, int y, bool black) { tft->drawPixel(x, y, black ? BLACK : WHITE); }
 };
 
 struct CardInfo {
     String title;
     String subtitle;
     String badge;
-    StickyIconType icon;
+    Icon icon;
 };
 
 static CardInfo getCardInfo(const MenuOptions &optItem) {
@@ -38,209 +32,38 @@ static CardInfo getCardInfo(const MenuOptions &optItem) {
     textLower.toLowerCase();
 
     if (name == "STICK" || textLower.indexOf("sticky") >= 0 || textLower.indexOf("finger") >= 0) {
-        return {"Sticky Fingers", "RF Recon & Learning Companion", "SLOT 0", ICON_ANTENNA};
+        return {"Sticky Fingers", "RF Recon & Learning Companion", "SLOT 0", Icon::Antenna};
     }
     if (name == "DRAFT" || textLower.indexOf("draft") >= 0) {
-        return {"Draftling", "Distraction-Free Writerdeck", "SLOT 1", ICON_DOCUMENT};
+        return {"Draftling", "Distraction-Free Writerdeck", "SLOT 1", Icon::Document};
     }
     if (name == "CROSS" || textLower.indexOf("cross") >= 0) {
-        return {"CrossMux", "EPUB Reader & Document Sync", "SLOT 2", ICON_BOOK};
+        return {"CrossMux", "EPUB Reader & Document Sync", "SLOT 2", Icon::Book};
     }
     if (textLower.indexOf("map") >= 0 || name == "MAP") {
-        return {"Sticky Map", "Offline City Navigator", "SD CARD", ICON_MAP};
+        return {"Sticky Map", "Offline City Navigator", "SD CARD", Icon::Map};
     }
     if (name == "SD") {
-        return {"MicroSD Library", "Browse SD Images & ROMs", "STORAGE", ICON_SD};
+        return {"MicroSD Library", "Browse SD Images & ROMs", "STORAGE", Icon::Sd};
     }
     if (name == "CFG") {
-        return {"Settings", "Display, Wi-Fi & System", "SYSTEM", ICON_GEAR};
+        return {"Settings", "Display, Wi-Fi & System", "SYSTEM", Icon::Gear};
     }
     if (name == "WUI") {
-        return {"Wireless Web Manager", "Web Flash & File Server", "WIFI", ICON_WIFI};
+        return {"Wireless Web Manager", "Web Flash & File Server", "WIFI", Icon::Wifi};
     }
     if (name == "PMan" || name == "PM") {
-        return {"Partition Manager", "Configure Boot Slots", "FLASH", ICON_CHIP};
+        return {"Partition Manager", "Configure Boot Slots", "FLASH", Icon::Chip};
     }
     if (name == "OTA") {
-        return {"Online Installer", "Over-The-Air Releases", "NETWORK", ICON_CLOUD};
+        return {"Online Installer", "Over-The-Air Releases", "NETWORK", Icon::Cloud};
     }
     if (name == "OFF") {
-        return {"Power Off", "Deep Sleep & Standby", "STANDBY", ICON_POWER};
+        return {"Power Off", "Deep Sleep & Standby", "STANDBY", Icon::Power};
     }
 
     String title = text.length() > 0 ? text : name;
-    return {title, "Application", "APP", ICON_GENERIC};
-}
-
-static void drawStickyIcon(StickyIconType type, int x, int y, uint16_t color) {
-    uint16_t bg = (color == BLACK) ? WHITE : BLACK;
-    int cx = x + 16;
-    int cy = y + 16;
-
-    switch (type) {
-        case ICON_ANTENNA: {
-            tft->drawLine(cx, y + 4, cx, y + 26, color);
-            tft->drawLine(cx - 1, y + 4, cx - 1, y + 26, color);
-            tft->fillCircle(cx, y + 4, 2, color);
-            tft->drawCircle(cx, cy, 6, color);
-            tft->drawCircle(cx, cy, 11, color);
-            tft->drawCircle(cx, cy, 15, color);
-            tft->fillRect(cx - 16, y, 32, 5, bg);
-            tft->fillRect(cx - 16, y + 21, 32, 12, bg);
-            tft->drawLine(cx - 6, y + 26, cx + 6, y + 26, color);
-            break;
-        }
-        case ICON_DOCUMENT: {
-            int px = x + 6, py = y + 4, pw = 20, ph = 24;
-            tft->drawRect(px, py, pw, ph, color);
-            tft->drawRect(px + 1, py + 1, pw - 2, ph - 2, color);
-            tft->drawLine(px + pw - 6, py, px + pw, py + 6, color);
-            tft->drawLine(px + 4, py + 7, px + pw - 7, py + 7, color);
-            tft->drawLine(px + 4, py + 12, px + pw - 4, py + 12, color);
-            tft->drawLine(px + 4, py + 17, px + pw - 5, py + 17, color);
-            break;
-        }
-        case ICON_BOOK: {
-            int bx = x + 16, by = y + 6;
-            tft->drawLine(bx, by + 2, bx, by + 20, color);
-            tft->drawLine(bx - 1, by + 2, bx - 1, by + 20, color);
-            tft->drawLine(bx - 1, by + 2, bx - 13, by + 4, color);
-            tft->drawLine(bx - 13, by + 4, bx - 13, by + 22, color);
-            tft->drawLine(bx - 13, by + 22, bx - 1, by + 20, color);
-            tft->drawLine(bx, by + 2, bx + 12, by + 4, color);
-            tft->drawLine(bx + 12, by + 4, bx + 12, by + 22, color);
-            tft->drawLine(bx + 12, by + 22, bx, by + 20, color);
-            tft->drawLine(bx - 10, by + 8, bx - 4, by + 7, color);
-            tft->drawLine(bx - 10, by + 12, bx - 4, by + 11, color);
-            tft->drawLine(bx - 10, by + 16, bx - 4, by + 15, color);
-            tft->drawLine(bx + 4, by + 7, bx + 10, by + 8, color);
-            tft->drawLine(bx + 4, by + 11, bx + 10, by + 12, color);
-            tft->drawLine(bx + 4, by + 15, bx + 10, by + 16, color);
-            break;
-        }
-        case ICON_MAP: {
-            int mx = x + 4, my = y + 5;
-            tft->drawLine(mx, my + 4, mx + 8, my, color);
-            tft->drawLine(mx + 8, my, mx + 16, my + 4, color);
-            tft->drawLine(mx + 16, my + 4, mx + 24, my, color);
-            tft->drawLine(mx, my + 22, mx + 8, my + 18, color);
-            tft->drawLine(mx + 8, my + 18, mx + 16, my + 22, color);
-            tft->drawLine(mx + 16, my + 22, mx + 24, my + 18, color);
-            tft->drawLine(mx, my + 4, mx, my + 22, color);
-            tft->drawLine(mx + 8, my, mx + 8, my + 18, color);
-            tft->drawLine(mx + 16, my + 4, mx + 16, my + 22, color);
-            tft->drawLine(mx + 24, my, mx + 24, my + 18, color);
-            tft->fillCircle(mx + 12, my + 9, 3, color);
-            tft->drawLine(mx + 12, my + 9, mx + 12, my + 14, color);
-            break;
-        }
-        case ICON_SD: {
-            int sx = x + 7, sy = y + 4, sw = 18, sh = 24;
-            tft->drawRect(sx, sy + 4, sw, sh - 4, color);
-            tft->drawLine(sx + 4, sy, sx + sw - 1, sy, color);
-            tft->drawLine(sx, sy + 4, sx + 4, sy, color);
-            tft->drawLine(sx + sw - 1, sy, sx + sw - 1, sy + sh - 1, color);
-            for (int p = 0; p < 4; ++p) {
-                tft->fillRect(sx + 3 + p * 3, sy + 3, 2, 4, color);
-            }
-            break;
-        }
-        case ICON_GEAR: {
-            tft->drawCircle(cx, cy, 9, color);
-            tft->drawCircle(cx, cy, 8, color);
-            tft->drawCircle(cx, cy, 4, color);
-            tft->fillRect(cx - 2, cy - 12, 4, 3, color);
-            tft->fillRect(cx - 2, cy + 9, 4, 3, color);
-            tft->fillRect(cx - 12, cy - 2, 3, 4, color);
-            tft->fillRect(cx + 9, cy - 2, 3, 4, color);
-            break;
-        }
-        case ICON_WIFI: {
-            tft->fillCircle(cx, y + 24, 2, color);
-            tft->drawCircle(cx, y + 24, 6, color);
-            tft->drawCircle(cx, y + 24, 11, color);
-            tft->drawCircle(cx, y + 24, 16, color);
-            tft->fillRect(cx - 18, y + 25, 36, 10, bg);
-            break;
-        }
-        case ICON_CHIP: {
-            int kx = x + 6, ky = y + 6, ksz = 20;
-            tft->drawRect(kx, ky, ksz, ksz, color);
-            tft->drawRect(kx + 1, ky + 1, ksz - 2, ksz - 2, color);
-            for (int p = 0; p < 3; ++p) {
-                tft->drawLine(kx - 3, ky + 4 + p * 5, kx, ky + 4 + p * 5, color);
-                tft->drawLine(kx + ksz, ky + 4 + p * 5, kx + ksz + 3, ky + 4 + p * 5, color);
-            }
-            tft->fillCircle(kx + 4, ky + 4, 2, color);
-            break;
-        }
-        case ICON_CLOUD: {
-            tft->drawCircle(cx - 5, cy - 1, 6, color);
-            tft->drawCircle(cx + 5, cy, 5, color);
-            tft->drawCircle(cx + 1, cy - 5, 6, color);
-            tft->drawLine(cx - 9, cy + 5, cx + 10, cy + 5, color);
-            tft->drawLine(cx, cy + 1, cx, cy + 11, color);
-            tft->drawLine(cx - 3, cy + 8, cx, cy + 11, color);
-            tft->drawLine(cx + 3, cy + 8, cx, cy + 11, color);
-            break;
-        }
-        case ICON_POWER: {
-            tft->drawCircle(cx, cy, 10, color);
-            tft->drawCircle(cx, cy, 9, color);
-            tft->fillRect(cx - 3, cy - 11, 6, 6, bg);
-            tft->drawLine(cx, cy - 12, cx, cy, color);
-            tft->drawLine(cx - 1, cy - 12, cx - 1, cy, color);
-            break;
-        }
-        default: {
-            int gx = x + 6, gy = y + 6;
-            tft->drawRoundRect(gx, gy, 20, 20, 4, color);
-            tft->drawRoundRect(gx + 1, gy + 1, 18, 18, 3, color);
-            tft->drawLine(gx + 10, gy + 4, gx + 10, gy + 16, color);
-            tft->drawLine(gx + 4, gy + 10, gx + 16, gy + 10, color);
-            break;
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Rotated 90 Deg Clockwise Text Rendering
-// ---------------------------------------------------------------------------
-
-static void drawCharRotated90CW(int x, int y, char c, uint8_t size, uint16_t color) {
-    if (c < 32 || c > 126) c = ' ';
-    const uint8_t *glyph = font5x7_ascii32_126[c - 32];
-    for (int col = 0; col < 5; ++col) {
-        uint8_t line = pgm_read_byte(&glyph[col]);
-        for (int row = 0; row < 7; ++row) {
-            if (line & (1 << row)) {
-                if (size == 1) {
-                    tft->drawPixel(x + row, y - col, color);
-                } else {
-                    tft->fillRect(x + row * size, y - (col + 1) * size + 1, size, size, color);
-                }
-            }
-        }
-    }
-}
-
-static int drawTextRotated90CW(int x, int y, const char *str, uint8_t size, uint16_t color) {
-    if (!str) return 0;
-    int curY = y;
-    int stepY = 6 * size;
-    while (*str) {
-        drawCharRotated90CW(x, curY, *str, size, color);
-        curY -= stepY;
-        str++;
-    }
-    return y - curY;
-}
-
-static int getTextWidthRotated(const char *str, uint8_t size) {
-    if (!str) return 0;
-    int len = strlen(str);
-    if (len == 0) return 0;
-    return (len - 1) * 6 * size + 5 * size;
+    return {title, "Application", "APP", Icon::Generic};
 }
 
 // ---------------------------------------------------------------------------
@@ -285,131 +108,8 @@ void stickyAudioFeedback(uint32_t freq, uint32_t ms) {
 
 void drawRightButtonRail(const char* confirm, const char* up, const char* down, const char* back, int pressedBtn) {
     if (pressedBtn < 0) pressedBtn = s_activeButton;
-    constexpr int kNotchW = 32;
-    const int notchX = tftWidth - kNotchW; // 480 - 32 = 448
-
-    // Physical button centers on Seeed Studio reTerminal Sticky (Portrait):
-    // Button 0 (Top, GPIO 4): AI / Power / Confirm (centerY = 75)
-    // Button 1 (Middle, GPIO 5): Up / Prev (centerY = 205)
-    // Button 2 (Bottom, GPIO 6): Down / Next (centerY = 292)
-    const char* labels[3] = {confirm, up, down};
-    constexpr int centers[3] = {75, 205, 292};
-
-    for (int i = 0; i < 3; ++i) {
-        if (!labels[i] || !labels[i][0]) continue;
-        const bool isPressed = (pressedBtn == i);
-        int textH = getTextWidthRotated(labels[i], 2);
-
-        // Organic curved tab with smooth tangent fillets to bezel edge
-        constexpr int rTrans = 14;
-        int faceH = textH + 6;
-        if (faceH < 24) faceH = 24;
-        int centerY = centers[i];
-        int yTop = centerY - faceH / 2;
-        int yBot = centerY + faceH / 2;
-        if (i == 2 && yBot > 310) {
-            yBot = 310;
-            yTop = yBot - faceH;
-            centerY = (yTop + yBot) / 2;
-        }
-
-        const int yStart = yTop - 2 * rTrans;
-        const int yEnd = yBot + 2 * rTrans;
-        constexpr int bezelX = 480;
-        constexpr float halfW = kNotchW / 2.0f;
-        constexpr float invR = 1.0f / rTrans;
-
-        for (int y = yStart; y <= yEnd; ++y) {
-            int xEdge = notchX;
-            if (y < yTop - rTrans) {
-                float t = (float)(y - yStart) * invR;
-                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
-                xEdge = bezelX - (int)(dx + 0.5f);
-            } else if (y <= yTop) {
-                float t = (float)(yTop - y) * invR;
-                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
-                xEdge = notchX + (int)(dx + 0.5f);
-            } else if (y <= yBot) {
-                xEdge = notchX;
-            } else if (y < yBot + rTrans) {
-                float t = (float)(y - yBot) * invR;
-                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
-                xEdge = notchX + (int)(dx + 0.5f);
-            } else {
-                float t = (float)(yEnd - y) * invR;
-                float dx = halfW * (1.0f - sqrtf(std::max(0.0f, 1.0f - t * t)));
-                xEdge = bezelX - (int)(dx + 0.5f);
-            }
-
-            if (xEdge < bezelX) {
-                if (isPressed) {
-                    // Click color change: 2-pixel black outline, white interior
-                    tft->drawPixel(xEdge, y, BLACK);
-                    if (xEdge + 1 < bezelX) tft->drawPixel(xEdge + 1, y, BLACK);
-                    if (xEdge + 2 < bezelX) {
-                        tft->drawFastHLine(xEdge + 2, y, bezelX - (xEdge + 2), WHITE);
-                    }
-                } else {
-                    // Static resting color: solid black tab
-                    tft->drawFastHLine(xEdge, y, bezelX - xEdge, BLACK);
-                }
-            }
-        }
-
-        // Label text: rotated 90 CW
-        int charX = notchX + (kNotchW - 14) / 2;
-        int startY = centerY + textH / 2;
-
-        if (isPressed) {
-            // Click state: bold black text on white tab
-            drawTextRotated90CW(charX, startY, labels[i], 2, BLACK);
-        } else {
-            // Resting state: bold white text on black tab
-            drawTextRotated90CW(charX, startY, labels[i], 2, WHITE);
-        }
-    }
-
-    // 2-button chord (Button 1 + Button 2 simultaneously):
-    if (back && back[0]) {
-        const bool chordActive = (pressedBtn == 3);
-        constexpr int bracketX = 442;
-        tft->drawLine(bracketX, 205, bracketX + 6, 205, BLACK);
-        tft->drawLine(bracketX, 205, bracketX, 239, BLACK);
-        tft->drawLine(bracketX, 259, bracketX, 292, BLACK);
-        tft->drawLine(bracketX, 292, bracketX + 6, 292, BLACK);
-
-        if (chordActive) {
-            tft->fillRoundRect(bracketX - 6, 240, 14, 18, 3, BLACK);
-            tft->setTextSize(1);
-            tft->setTextColor(WHITE, BLACK);
-            tft->drawString("2", bracketX - 3, 244);
-        } else {
-            tft->fillRoundRect(bracketX - 6, 240, 14, 18, 3, WHITE);
-            tft->drawRoundRect(bracketX - 6, 240, 14, 18, 3, BLACK);
-            tft->setTextSize(1);
-            tft->setTextColor(BLACK, WHITE);
-            tft->drawString("2", bracketX - 3, 244);
-        }
-
-        constexpr int chordCenterY = 360;
-        int labelH = getTextWidthRotated(back, 2);
-        int chordH = labelH + 16;
-        if (chordH < 56) chordH = 56;
-        int chordY = chordCenterY - chordH / 2;
-        if (chordActive) {
-            tft->fillRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
-            tft->drawRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
-            int charX = (notchX + 4) + ((kNotchW - 4) - 14) / 2;
-            int startY = chordCenterY + labelH / 2;
-            drawTextRotated90CW(charX, startY, back, 2, WHITE);
-        } else {
-            tft->fillRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, WHITE);
-            tft->drawRoundRect(notchX + 4, chordY, kNotchW - 4, chordH, 5, BLACK);
-            int charX = (notchX + 4) + ((kNotchW - 4) - 14) / 2;
-            int startY = chordCenterY + labelH / 2;
-            drawTextRotated90CW(charX, startY, back, 2, BLACK);
-        }
-    }
+    TftCanvas c;
+    stickyui::rail(c, confirm, up, down, back, pressedBtn);
 }
 
 void refreshStickyButtonRail(const char* confirm, const char* up, const char* down, const char* back) {
@@ -423,75 +123,16 @@ void refreshStickyButtonRail(const char* confirm, const char* up, const char* do
 // ---------------------------------------------------------------------------
 
 static void drawHeader() {
-    tft->setTextSize(_fm); // Size 3 (24px)
-    tft->setTextColor(BLACK, WHITE);
-    tft->drawString("STICKY LAUNCHER", 14, 12);
-
-    tft->setTextSize(1);
-    tft->setTextColor(BLACK, WHITE);
-    tft->drawString("MULTI-BOOT CARD DECK", 14, 38);
-
-    int bat = getBattery();
-    if (bat < 0) bat = 0;
-    if (bat > 100) bat = 100;
-    String batStr = String(bat) + "%";
-    tft->setTextSize(_fp); // Size 2 (16px)
-    tft->drawRightString(batStr, 434 - 44, 14, 1);
-
-    // Battery outline
-    tft->drawRoundRect(434 - 40, 14, 30, 15, 2, BLACK);
-    int fillW = (24 * bat) / 100;
-    if (fillW > 0) {
-        tft->fillRect(434 - 37, 17, fillW, 9, BLACK);
-    }
-    tft->fillRect(434 - 10, 18, 2, 7, BLACK); // Tip
-
-    // Header divider line ending at x = 434 (clean margin before dynamic notch)
-    tft->drawFastHLine(14, 52, 420, BLACK);
+    TftCanvas c;
+    stickyui::header(c, "STICKY LAUNCHER", "MULTI-BOOT CARD DECK", getBattery());
 }
 
 static void drawSingleCard(int slotIdx, int itemIdx, const MenuOptions &item, bool isSelected) {
+    (void)itemIdx;
     CardInfo info = getCardInfo(item);
-    int x = 14;
-    int y = 58 + slotIdx * (90 + 6);
-    int w = 420;
-    int h = 90;
-
-    if (isSelected) {
-        tft->fillRoundRect(x, y, w, h, 6, BLACK);
-
-        // Inverted card contents
-        drawStickyIcon(info.icon, x + 14, y + (h - 32) / 2, WHITE);
-
-        tft->setTextSize(_fm);
-        tft->setTextColor(WHITE, BLACK);
-        tft->drawString(info.title, x + 58, y + 16);
-
-        tft->setTextSize(_fp);
-        tft->setTextColor(WHITE, BLACK);
-        tft->drawString(info.subtitle, x + 58, y + 48);
-
-        tft->setTextSize(1);
-        tft->setTextColor(WHITE, BLACK);
-        tft->drawRightString(info.badge, x + w - 16, y + 16, 1);
-    } else {
-        tft->fillRoundRect(x, y, w, h, 6, WHITE);
-        tft->drawRoundRect(x, y, w, h, 6, BLACK);
-
-        drawStickyIcon(info.icon, x + 14, y + (h - 32) / 2, BLACK);
-
-        tft->setTextSize(_fm);
-        tft->setTextColor(BLACK, WHITE);
-        tft->drawString(info.title, x + 58, y + 16);
-
-        tft->setTextSize(_fp);
-        tft->setTextColor(BLACK, WHITE);
-        tft->drawString(info.subtitle, x + 58, y + 48);
-
-        tft->setTextSize(1);
-        tft->setTextColor(BLACK, WHITE);
-        tft->drawRightString(info.badge, x + w - 16, y + 16, 1);
-    }
+    TftCanvas c;
+    stickyui::card(c, stickyui::kMarginX, stickyui::cardY(slotIdx), stickyui::kContentW, stickyui::kCardH, isSelected,
+                   info.icon, info.title.c_str(), info.subtitle.c_str(), info.badge.c_str());
 }
 
 void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool forceFullRedraw) {
@@ -532,14 +173,12 @@ void drawStickyCardDeckMenu(std::vector<MenuOptions> &opt, int index, bool force
 
         // Scroll indicators centered in card content area (x = 224)
         if (startIdx > 0) {
-            tft->setTextSize(1);
-            tft->setTextColor(BLACK, WHITE);
-            tft->drawCentreString("^ MORE ^", 224, 52, 1);
+            TftCanvas c;
+            stickyui::textCentre(c, 224, 52, "^ MORE ^", stickyui::kSmallSize, true, true);
         }
         if (startIdx + visibleCount < size) {
-            tft->setTextSize(1);
-            tft->setTextColor(BLACK, WHITE);
-            tft->drawCentreString("v MORE v", 224, 730, 1);
+            TftCanvas c;
+            stickyui::textCentre(c, 224, 730, "v MORE v", stickyui::kSmallSize, true, true);
         }
 
         for (int slot = 0; slot < visibleCount; ++slot) {
